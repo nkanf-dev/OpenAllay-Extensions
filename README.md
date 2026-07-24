@@ -15,8 +15,11 @@ and the [example manifest](examples/openallay-extension.json). Extension
 entrypoints register through the normal Fabric or NeoForge loader lifecycle;
 the complete startup contract and minimal examples are in the
 [authoring guide](docs/authoring.md). A complete independent project that
-builds both loader JARs against the public OpenAllay release is available under
-[`examples/hello-extension`](examples/hello-extension).
+builds both loader JARs is available under
+[`examples/hello-extension`](examples/hello-extension). Its CI currently
+checks out the OpenAllay 0.2.x feature branch because the public `0.2.0`
+artifact predates the Extension SPI. The example will switch to released
+artifacts before its packages are listed in the catalog.
 
 ## Catalog
 
