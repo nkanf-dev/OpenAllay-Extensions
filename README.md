@@ -27,14 +27,17 @@ is prepared.
 Catalog entries are strict and must include:
 
 - a stable Extension ID and version;
-- supported loaders and Minecraft/OpenAllay version ranges;
-- an HTTPS artifact URL and exact SHA-256 checksum;
-- the mod IDs installed by the artifact;
+- Minecraft/OpenAllay version ranges;
+- one HTTPS artifact, exact SHA-256 checksum, and installed mod-ID set for each
+  supported loader;
 - a public source location.
 
 See [`schema/catalog.schema.json`](schema/catalog.schema.json) for the complete
-format. A catalog entry must describe the same identity, compatibility ranges,
-and mod IDs as the manifest embedded in its artifact.
+format. Fabric and NeoForge normally publish different JARs, so schema 2 keeps
+them under one logical Extension version but verifies and installs only the
+artifact for the current loader. Each loader artifact must describe the same
+identity and compatibility ranges as the manifest embedded in that JAR, and
+its catalog `modIds` must match the embedded manifest.
 
 ## Contributing
 

@@ -20,6 +20,12 @@ The manifest’s `openAllayApiVersionRange` is checked at game startup. Keep
 OpenAllay as a required loader dependency and compile against the released API;
 do not shade OpenAllay classes into the Extension.
 
+Publish one normal JAR per loader. The embedded package manifest in the Fabric
+JAR declares only `fabric`; the manifest in the NeoForge JAR declares only
+`neoforge`. Both packages keep the same Extension ID and version. The community
+catalog groups those loader-specific artifacts into one logical Extension
+entry and selects only the current loader at install time.
+
 ## Fabric entrypoint
 
 Declare a normal `main` entrypoint in `fabric.mod.json`, then register during
@@ -95,11 +101,13 @@ crashing OpenAllay bootstrap.
 
 ## Catalog submission
 
-After publishing a loader-compatible JAR:
+After publishing the loader-compatible JARs:
 
-1. calculate its exact SHA-256;
-2. ensure the catalog identity, version ranges, and `modIds` match the embedded
+1. calculate the exact SHA-256 of every loader artifact;
+2. ensure the shared catalog identity and version ranges match every embedded
    manifest;
-3. add one deterministic entry to `catalog.json`;
-4. run `node scripts/build-catalog.mjs`;
-5. open a pull request with the source and release links.
+3. ensure each artifact’s catalog `modIds` match that JAR’s embedded manifest;
+4. add one deterministic schema-2 entry with an `artifacts` member for each
+   supported loader to `catalog.json`;
+5. run `node scripts/build-catalog.mjs`;
+6. open a pull request with the source and release links.

@@ -6,8 +6,7 @@
   "provider": "Example Author",
   "summary": "Shows how a mod integration declares its OpenAllay package identity.",
   "loaders": [
-    "fabric",
-    "neoforge"
+    "fabric"
   ],
   "minecraftVersionRange": "[26.2,26.3)",
   "openAllayApiVersionRange": "[0.2,0.3)",
