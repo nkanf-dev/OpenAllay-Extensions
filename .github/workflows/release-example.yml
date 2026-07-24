@@ -28,10 +28,11 @@ jobs:
       - name: Publish example release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          examples/hello-extension/build/libs/openallay-hello-extension-*.jar
-          examples/hello-extension/build/libs/SHA256SUMS
-          --verify-tag
-          --title "OpenAllay Hello Extension 0.1.0"
-          --notes "Reference Extension packages for Fabric and NeoForge, built against the released OpenAllay 0.2.1 API."
+        run: |
+          extension_version="${GITHUB_REF_NAME#hello-v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            examples/hello-extension/build/libs/openallay-hello-extension-*.jar \
+            examples/hello-extension/build/libs/SHA256SUMS \
+            --verify-tag \
+            --title "OpenAllay Hello Extension ${extension_version}" \
+            --notes "Reference Extension packages for Fabric and NeoForge, built against the released OpenAllay 0.2.1 API."

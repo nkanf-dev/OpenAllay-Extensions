@@ -26,12 +26,12 @@ public final class HelloExtension implements OpenAllayExtension {
         return new OpenAllayExtensionDescriptor(
                 "example:hello",
                 "Hello Extension",
-                "0.1.0",
+                "0.1.1",
                 "OpenAllay Community",
                 "Exposes one typed, evidence-bearing JavaScript value.",
                 Set.of(loader),
                 "[26.2,26.3)",
-                "[0.2,0.3)",
+                "[0.2.1,0.3)",
                 "https://github.com/nkanf-dev/OpenAllay-Extensions");
     }
 

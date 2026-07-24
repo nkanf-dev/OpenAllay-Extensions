@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "id": "example:hello",
   "name": "Hello Extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "provider": "OpenAllay Community",
   "summary": "Exposes one typed, evidence-bearing JavaScript value.",
   "loaders": [
     "neoforge"
   ],
   "minecraftVersionRange": "[26.2,26.3)",
-  "openAllayApiVersionRange": "[0.2,0.3)",
+  "openAllayApiVersionRange": "[0.2.1,0.3)",
   "modIds": [
     "openallay_hello_extension"
   ],
