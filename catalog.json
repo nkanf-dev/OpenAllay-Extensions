@@ -1,35 +1,35 @@
 {
   "schemaVersion": 2,
   "kind": "extension",
-  "generatedAt": "2026-07-24T23:02:59Z",
+  "generatedAt": "2026-07-24T23:11:15Z",
   "extensions": [
     {
       "id": "example:hello",
       "name": "Hello Extension",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "provider": "OpenAllay Community",
       "summary": "Exposes one typed, evidence-bearing JavaScript value.",
       "minecraftVersionRange": "[26.2,26.3)",
-      "openAllayApiVersionRange": "[0.2.1,0.3)",
+      "openAllayApiVersionRange": "[0.2,0.3)",
       "artifacts": [
         {
           "loader": "fabric",
-          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.1/openallay-hello-extension-0.1.1-fabric-26.2.jar",
-          "sha256": "e5f58cf528eb1afa0ee4b4a01b3fd7504429cb29653c85cd26c1f95c0693b7be",
+          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.2/openallay-hello-extension-0.1.2-fabric-26.2.jar",
+          "sha256": "8cf09c60224ca54530e3b0a4c9d814d3c79e8117ae0b6e9b776a11c8d51ebf0d",
           "modIds": [
             "openallay_hello_extension"
           ]
         },
         {
           "loader": "neoforge",
-          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.1/openallay-hello-extension-0.1.1-neoforge-26.2.jar",
-          "sha256": "88d53d6a175817219133dd9ef2cb5a12036653b2ea485109cf872a01abdc3bbe",
+          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.2/openallay-hello-extension-0.1.2-neoforge-26.2.jar",
+          "sha256": "2a0bd0ab7993ca49e98a22e19632d752c58b8422abb1405966ca4cded04bb702",
           "modIds": [
             "openallay_hello_extension"
           ]
         }
       ],
-      "source": "https://github.com/nkanf-dev/OpenAllay-Extensions/tree/hello-v0.1.1/examples/hello-extension"
+      "source": "https://github.com/nkanf-dev/OpenAllay-Extensions/tree/hello-v0.1.2/examples/hello-extension"
     }
   ]
 }
