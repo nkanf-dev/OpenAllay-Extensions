@@ -13,7 +13,7 @@ assert(catalog.kind === "extension", "kind must be extension");
 assert(!Number.isNaN(Date.parse(catalog.generatedAt)), "generatedAt must be ISO-8601");
 assert(Array.isArray(catalog.extensions), "extensions must be an array");
 
-const ids = new Set();
+const identities = new Set();
 const entries = catalog.extensions.map((entry) => {
   assertExactKeys(
     entry,
@@ -42,8 +42,9 @@ const entries = catalog.extensions.map((entry) => {
   ]) {
     assert(typeof entry[field] === "string" && entry[field].length > 0, `${field} must be non-empty`);
   }
-  assert(!ids.has(entry.id), `duplicate extension id: ${entry.id}`);
-  ids.add(entry.id);
+  const identity = `${entry.id}\u0000${entry.version}`;
+  assert(!identities.has(identity), `duplicate extension identity: ${entry.id}@${entry.version}`);
+  identities.add(identity);
   assert(Array.isArray(entry.artifacts) && entry.artifacts.length > 0, `${entry.id}: artifacts must not be empty`);
   const loaders = new Set();
   const artifacts = entry.artifacts.map((artifact) => {
