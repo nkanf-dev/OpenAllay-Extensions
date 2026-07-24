@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "openallay_hello_extension",
+  "version": "0.1.0",
+  "name": "OpenAllay Hello Extension",
+  "description": "Minimal external OpenAllay Extension example.",
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.openallay.example.fabric.HelloFabricEntrypoint"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "openallay": ">=0.2.0"
+  }
+}

@@ -14,7 +14,9 @@ local JAR even when it is not listed in the community catalog. See
 and the [example manifest](examples/openallay-extension.json). Extension
 entrypoints register through the normal Fabric or NeoForge loader lifecycle;
 the complete startup contract and minimal examples are in the
-[authoring guide](docs/authoring.md).
+[authoring guide](docs/authoring.md). A complete independent project that
+builds both loader JARs against the public OpenAllay release is available under
+[`examples/hello-extension`](examples/hello-extension).
 
 ## Catalog
 

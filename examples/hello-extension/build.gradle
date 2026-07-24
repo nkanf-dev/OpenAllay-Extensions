@@ -1,0 +1,128 @@
+plugins {
+    id "java"
+}
+
+group = "dev.openallay.example"
+version = "0.1.0"
+
+def openAllayVersion = providers.gradleProperty("openallayVersion").orElse("0.2.0").get()
+def openAllayArtifactsDir = providers.gradleProperty("openallayArtifactsDir")
+        .map { file(it).absoluteFile }
+        .orNull
+def openAllayFabric = openAllayArtifactsDir == null
+        ? "dev.openallay:openallay:${openAllayVersion}:fabric-26.2@jar"
+        : files(new File(
+                openAllayArtifactsDir,
+                "fabric/build/libs/openallay-fabric-26.2-${openAllayVersion}.jar"))
+def openAllayNeoForge = openAllayArtifactsDir == null
+        ? "dev.openallay:openallay:${openAllayVersion}:neoforge-26.2@jar"
+        : files(new File(
+                openAllayArtifactsDir,
+                "neoforge/build/libs/openallay-neoforge-26.2-${openAllayVersion}.jar"))
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    ivy {
+        name = "openAllayGitHubReleases"
+        url = uri("https://github.com/nkanf-dev/OpenAllay/releases/download")
+        patternLayout {
+            artifact("v[revision]/[artifact]-[classifier]-[revision].[ext]")
+        }
+        metadataSources {
+            artifact()
+        }
+    }
+    maven {
+        url = uri("https://maven.fabricmc.net")
+    }
+    maven {
+        url = uri("https://maven.neoforged.net/releases")
+    }
+    maven {
+        url = uri("https://libraries.minecraft.net")
+    }
+    mavenCentral()
+}
+
+sourceSets {
+    shared
+    fabric {
+        compileClasspath += sourceSets.shared.output
+        runtimeClasspath += sourceSets.shared.output
+    }
+    neoforge {
+        compileClasspath += sourceSets.shared.output
+        runtimeClasspath += sourceSets.shared.output
+    }
+}
+
+dependencies {
+    sharedCompileOnly(openAllayFabric)
+
+    fabricCompileOnly(openAllayFabric)
+    fabricCompileOnly("net.fabricmc:fabric-loader:0.19.3")
+
+    neoforgeCompileOnly(openAllayNeoForge)
+    neoforgeCompileOnly("net.neoforged.fancymodloader:loader:11.0.13")
+    neoforgeCompileOnly("net.neoforged:bus:8.0.5")
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
+
+tasks.register("fabricJar", Jar) {
+    group = "build"
+    description = "Builds the normal Fabric Extension JAR."
+    archiveBaseName = "openallay-hello-extension"
+    archiveClassifier = "fabric-26.2"
+    from(sourceSets.shared.output)
+    from(sourceSets.fabric.output)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+tasks.register("neoforgeJar", Jar) {
+    group = "build"
+    description = "Builds the normal NeoForge Extension JAR."
+    archiveBaseName = "openallay-hello-extension"
+    archiveClassifier = "neoforge-26.2"
+    from(sourceSets.shared.output)
+    from(sourceSets.neoforge.output)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+tasks.named("assemble") {
+    dependsOn("fabricJar", "neoforgeJar")
+}
+
+tasks.register("verifyLoaderPackages") {
+    group = "verification"
+    dependsOn("fabricJar", "neoforgeJar")
+    doLast {
+        if (openAllayArtifactsDir != null) {
+            [openAllayFabric, openAllayNeoForge].each { dependency ->
+                dependency.files.each {
+                    if (!it.isFile()) {
+                        throw new GradleException("Missing local OpenAllay artifact: ${it}")
+                    }
+                }
+            }
+        }
+        def fabric = tasks.named("fabricJar").get().archiveFile.get().asFile
+        def neoforge = tasks.named("neoforgeJar").get().archiveFile.get().asFile
+        [fabric, neoforge].each {
+            if (!it.isFile() || it.length() == 0) {
+                throw new GradleException("Missing Extension package: ${it}")
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn("verifyLoaderPackages")
+}

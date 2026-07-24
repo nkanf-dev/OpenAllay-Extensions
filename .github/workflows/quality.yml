@@ -20,3 +20,27 @@ jobs:
       - run: node scripts/build-catalog.mjs
       - run: git diff --exit-code -- catalog.json
       - run: node scripts/validate-package-manifest.mjs examples/openallay-extension.json
+
+  external-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: extensions
+      - uses: actions/checkout@v4
+        with:
+          repository: nkanf-dev/OpenAllay
+          ref: feat/0.2-platform-iteration
+          path: openallay
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 25
+      - name: Build current OpenAllay loader artifacts
+        run: ./openallay/gradlew -p openallay :fabric:build :neoforge:build
+      - name: Build independent Fabric and NeoForge example packages
+        run: >-
+          ./openallay/gradlew
+          -p extensions/examples/hello-extension
+          -PopenallayArtifactsDir="$GITHUB_WORKSPACE/openallay"
+          clean check
