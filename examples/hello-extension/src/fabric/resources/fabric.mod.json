@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "openallay_hello_extension",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "name": "OpenAllay Hello Extension",
   "description": "Minimal external OpenAllay Extension example.",
   "license": "MIT",

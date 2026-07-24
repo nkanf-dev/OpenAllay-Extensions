@@ -5,7 +5,9 @@ shares one typed contribution implementation and produces separate normal
 Fabric and NeoForge JARs.
 
 By default, the example resolves the released OpenAllay `0.2.1` Fabric and
-NeoForge JARs directly from GitHub Releases:
+NeoForge JARs directly from GitHub Releases. OpenAllay product versions and
+Extension API versions are independent: this package requires OpenAllay
+`0.2.1` or newer while declaring compatibility with Extension API `0.2.x`.
 
 ```bash
 gradle clean check

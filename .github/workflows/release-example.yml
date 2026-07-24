@@ -35,4 +35,4 @@ jobs:
             examples/hello-extension/build/libs/SHA256SUMS \
             --verify-tag \
             --title "OpenAllay Hello Extension ${extension_version}" \
-            --notes "Reference Extension packages for Fabric and NeoForge, built against the released OpenAllay 0.2.1 API."
+            --notes "Reference Extension packages for Fabric and NeoForge, compiled against OpenAllay 0.2.1 and compatible with the OpenAllay Extension API 0.2.x."

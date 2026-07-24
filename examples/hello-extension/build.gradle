@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "dev.openallay.example"
-version = "0.1.1"
+version = "0.1.2"
 
 def openAllayVersion = providers.gradleProperty("openallayVersion").orElse("0.2.1").get()
 def openAllayArtifactsDir = providers.gradleProperty("openallayArtifactsDir")
@@ -141,10 +141,26 @@ tasks.register("verifyLoaderPackages") {
                 def manifest = new JsonSlurper().parse(jar.getInputStream(manifestEntry))
                 if (manifest.id != "example:hello"
                         || manifest.version != project.version
+                        || manifest.openAllayApiVersionRange != "[0.2,0.3)"
                         || manifest.loaders != [loader]
                         || manifest.modIds != ["openallay_hello_extension"]) {
                     throw new GradleException(
                             "${loader} package manifest disagrees with its loader package")
+                }
+                if (loader == "fabric") {
+                    def loaderEntry = jar.getJarEntry("fabric.mod.json")
+                    def metadata = new JsonSlurper().parse(jar.getInputStream(loaderEntry))
+                    if (metadata.depends.openallay != ">=0.2.1") {
+                        throw new GradleException(
+                                "Fabric package must require OpenAllay product 0.2.1 or newer")
+                    }
+                } else {
+                    def loaderEntry = jar.getJarEntry("META-INF/neoforge.mods.toml")
+                    def metadata = jar.getInputStream(loaderEntry).getText("UTF-8")
+                    if (!metadata.contains('versionRange = "[0.2.1,0.3.0)"')) {
+                        throw new GradleException(
+                                "NeoForge package must require OpenAllay product 0.2.1 or newer")
+                    }
                 }
             }
             def digest = MessageDigest.getInstance("SHA-256")
