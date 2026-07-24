@@ -25,22 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: extensions
-      - uses: actions/checkout@v4
-        with:
-          repository: nkanf-dev/OpenAllay
-          ref: feat/0.2-platform-iteration
-          path: openallay
       - uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 25
-      - name: Build current OpenAllay loader artifacts
-        run: ./openallay/gradlew -p openallay :fabric:build :neoforge:build
-      - name: Build independent Fabric and NeoForge example packages
-        run: >-
-          ./openallay/gradlew
-          -p extensions/examples/hello-extension
-          -PopenallayArtifactsDir="$GITHUB_WORKSPACE/openallay"
-          clean check
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+      - name: Build against the released OpenAllay API
+        run: gradle -p examples/hello-extension clean check

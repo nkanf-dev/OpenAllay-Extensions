@@ -17,17 +17,14 @@ the complete startup contract and minimal examples are in the
 [authoring guide](docs/authoring.md). A complete independent project that
 builds both loader JARs is available under
 [`examples/hello-extension`](examples/hello-extension). Its CI currently
-checks out the OpenAllay 0.2.x feature branch because the public `0.2.0`
-artifact predates the Extension SPI. The example will switch to released
-artifacts before its packages are listed in the catalog.
+compiles against the released OpenAllay `0.2.1` API and produces independent
+Fabric and NeoForge packages.
 
 ## Catalog
 
 [`catalog.json`](catalog.json) is the stable catalog consumed by OpenAllay’s
-in-game Extensions page. The catalog is intentionally empty until the public
-Extension API is available from a released OpenAllay 0.2.x artifact. This keeps
-the community index installable and truthful while the first external example
-is prepared.
+in-game Extensions page. Published entries point to loader-specific,
+checksum-pinned release artifacts.
 
 Catalog entries are strict and must include:
 

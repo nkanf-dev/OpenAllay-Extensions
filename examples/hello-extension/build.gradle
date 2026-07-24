@@ -10,7 +10,7 @@ plugins {
 group = "dev.openallay.example"
 version = "0.1.0"
 
-def openAllayVersion = providers.gradleProperty("openallayVersion").orElse("0.2.0").get()
+def openAllayVersion = providers.gradleProperty("openallayVersion").orElse("0.2.1").get()
 def openAllayArtifactsDir = providers.gradleProperty("openallayArtifactsDir")
         .map { file(it).absoluteFile }
         .orNull
@@ -86,6 +86,8 @@ tasks.register("fabricJar", Jar) {
     description = "Builds the normal Fabric Extension JAR."
     archiveBaseName = "openallay-hello-extension"
     archiveClassifier = "fabric-26.2"
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
     from(sourceSets.shared.output)
     from(sourceSets.fabric.output)
     duplicatesStrategy = DuplicatesStrategy.FAIL
@@ -96,6 +98,8 @@ tasks.register("neoforgeJar", Jar) {
     description = "Builds the normal NeoForge Extension JAR."
     archiveBaseName = "openallay-hello-extension"
     archiveClassifier = "neoforge-26.2"
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
     from(sourceSets.shared.output)
     from(sourceSets.neoforge.output)
     duplicatesStrategy = DuplicatesStrategy.FAIL

@@ -1,0 +1,37 @@
+name: release example
+
+on:
+  push:
+    tags:
+      - "hello-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+      - name: Build loader-specific example packages
+        run: gradle -p examples/hello-extension clean check
+      - name: Generate checksums
+        working-directory: examples/hello-extension/build/libs
+        run: sha256sum openallay-hello-extension-*.jar > SHA256SUMS
+      - name: Publish example release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          examples/hello-extension/build/libs/openallay-hello-extension-*.jar
+          examples/hello-extension/build/libs/SHA256SUMS
+          --verify-tag
+          --title "OpenAllay Hello Extension 0.1.0"
+          --notes "Reference Extension packages for Fabric and NeoForge, built against the released OpenAllay 0.2.1 API."
