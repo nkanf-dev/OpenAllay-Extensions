@@ -24,7 +24,8 @@ Fabric and NeoForge packages.
 
 [`catalog.json`](catalog.json) is the stable catalog consumed by OpenAllay’s
 in-game Extensions page. Published entries point to loader-specific,
-checksum-pinned release artifacts.
+checksum-pinned release artifacts. The first entry is the installable Hello
+Extension reference package for both Fabric and NeoForge.
 
 Catalog entries are strict and must include:
 

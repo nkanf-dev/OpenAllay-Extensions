@@ -1,6 +1,35 @@
 {
   "schemaVersion": 2,
   "kind": "extension",
-  "generatedAt": "2026-07-25T00:00:00Z",
-  "extensions": []
+  "generatedAt": "2026-07-24T22:35:00Z",
+  "extensions": [
+    {
+      "id": "example:hello",
+      "name": "Hello Extension",
+      "version": "0.1.0",
+      "provider": "OpenAllay Community",
+      "summary": "Exposes one typed, evidence-bearing JavaScript value.",
+      "minecraftVersionRange": "[26.2,26.3)",
+      "openAllayApiVersionRange": "[0.2,0.3)",
+      "artifacts": [
+        {
+          "loader": "fabric",
+          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.0/openallay-hello-extension-0.1.0-fabric-26.2.jar",
+          "sha256": "b022ecf6d98fac7d7ee7766498c263fb0c3983f3ad1752f394fc15ad2078e33b",
+          "modIds": [
+            "openallay_hello_extension"
+          ]
+        },
+        {
+          "loader": "neoforge",
+          "artifact": "https://github.com/nkanf-dev/OpenAllay-Extensions/releases/download/hello-v0.1.0/openallay-hello-extension-0.1.0-neoforge-26.2.jar",
+          "sha256": "9db928022277b6ba7d2ee22067ec8dbe15ebd7090826fb11c5392e048767fd3d",
+          "modIds": [
+            "openallay_hello_extension"
+          ]
+        }
+      ],
+      "source": "https://github.com/nkanf-dev/OpenAllay-Extensions/tree/hello-v0.1.0/examples/hello-extension"
+    }
+  ]
 }
