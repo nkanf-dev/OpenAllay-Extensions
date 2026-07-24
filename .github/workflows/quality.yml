@@ -19,3 +19,4 @@ jobs:
           node-version: 22
       - run: node scripts/build-catalog.mjs
       - run: git diff --exit-code -- catalog.json
+      - run: node scripts/validate-package-manifest.mjs examples/openallay-extension.json

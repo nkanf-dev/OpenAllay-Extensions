@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "example:viewer",
+  "name": "Example Viewer Extension",
+  "version": "0.1.0",
+  "provider": "Example Author",
+  "summary": "Shows how a mod integration declares its OpenAllay package identity.",
+  "loaders": [
+    "fabric",
+    "neoforge"
+  ],
+  "minecraftVersionRange": "[26.2,26.3)",
+  "openAllayApiVersionRange": "[0.2,0.3)",
+  "modIds": [
+    "example_viewer_extension"
+  ],
+  "source": "https://github.com/example/openallay-viewer-extension"
+}

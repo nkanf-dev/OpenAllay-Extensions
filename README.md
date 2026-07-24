@@ -7,6 +7,12 @@ OpenAllay Extensions connect mod APIs to OpenAllay’s typed JavaScript host.
 They are ordinary Fabric or NeoForge mods: after installation, Minecraft loads
 them on restart and OpenAllay discovers the detached capabilities they expose.
 
+Every distributable Extension JAR embeds a strict package manifest at
+`META-INF/openallay-extension.json`. This lets OpenAllay validate and import a
+local JAR even when it is not listed in the community catalog. See
+[`schema/package-manifest.schema.json`](schema/package-manifest.schema.json)
+and the [example manifest](examples/openallay-extension.json).
+
 ## Catalog
 
 [`catalog.json`](catalog.json) is the stable catalog consumed by OpenAllay’s
@@ -24,7 +30,8 @@ Catalog entries are strict and must include:
 - a public source location.
 
 See [`schema/catalog.schema.json`](schema/catalog.schema.json) for the complete
-format.
+format. A catalog entry must describe the same identity, compatibility ranges,
+and mod IDs as the manifest embedded in its artifact.
 
 ## Contributing
 
