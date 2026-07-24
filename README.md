@@ -11,7 +11,10 @@ Every distributable Extension JAR embeds a strict package manifest at
 `META-INF/openallay-extension.json`. This lets OpenAllay validate and import a
 local JAR even when it is not listed in the community catalog. See
 [`schema/package-manifest.schema.json`](schema/package-manifest.schema.json)
-and the [example manifest](examples/openallay-extension.json).
+and the [example manifest](examples/openallay-extension.json). Extension
+entrypoints register through the normal Fabric or NeoForge loader lifecycle;
+the complete startup contract and minimal examples are in the
+[authoring guide](docs/authoring.md).
 
 ## Catalog
 
@@ -35,9 +38,10 @@ and mod IDs as the manifest embedded in its artifact.
 
 ## Contributing
 
-The first SDK example and submission guide will land with the released public
-Extension API. Until then, design discussion and compatibility requests are
-welcome through GitHub issues.
+The public Extension API is versioned independently from the catalog. Compile
+against a released OpenAllay `0.2.x` artifact, declare the supported API range
+in the embedded manifest, and keep OpenAllay as a loader dependency rather than
+bundling its classes into your JAR.
 
 An Extension must:
 
