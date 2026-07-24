@@ -17,8 +17,10 @@ the complete startup contract and minimal examples are in the
 [authoring guide](docs/authoring.md). A complete independent project that
 builds both loader JARs is available under
 [`examples/hello-extension`](examples/hello-extension). Its CI currently
-compiles against the released OpenAllay `0.2.1` API and produces independent
-Fabric and NeoForge packages.
+compiles against the released OpenAllay `0.2.1` product artifacts and produces
+independent Fabric and NeoForge packages. OpenAllay product versions and
+Extension API versions are independent; `0.2.1` currently implements Extension
+API `0.2.0`.
 
 ## Catalog
 
@@ -30,7 +32,7 @@ Extension reference package for both Fabric and NeoForge.
 Catalog entries are strict and must include:
 
 - a stable Extension ID and version;
-- Minecraft/OpenAllay version ranges;
+- Minecraft and OpenAllay Extension API version ranges;
 - one HTTPS artifact, exact SHA-256 checksum, and installed mod-ID set for each
   supported loader;
 - a public source location.
@@ -44,10 +46,12 @@ its catalog `modIds` must match the embedded manifest.
 
 ## Contributing
 
-The public Extension API is versioned independently from the catalog. Compile
-against a released OpenAllay `0.2.x` artifact, declare the supported API range
-in the embedded manifest, and keep OpenAllay as a loader dependency rather than
-bundling its classes into your JAR.
+The public Extension API is versioned independently from both the catalog and
+the OpenAllay product. Compile against a released OpenAllay `0.2.x` artifact,
+declare the supported Extension API range in the embedded manifest, and declare
+the minimum OpenAllay product version in Fabric or NeoForge dependency metadata.
+Keep OpenAllay as a loader dependency rather than bundling its classes into
+your JAR.
 
 An Extension must:
 

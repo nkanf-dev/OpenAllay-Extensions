@@ -16,9 +16,13 @@ before packaging:
 node scripts/validate-package-manifest.mjs path/to/openallay-extension.json
 ```
 
-The manifest’s `openAllayApiVersionRange` is checked at game startup. Keep
-OpenAllay as a required loader dependency and compile against the released API;
-do not shade OpenAllay classes into the Extension.
+The manifest’s `openAllayApiVersionRange` is checked against OpenAllay's
+independently versioned Extension API at game startup. Keep OpenAllay as a
+required loader dependency, set the minimum product version in the loader
+metadata, and compile against that released product artifact; do not shade
+OpenAllay classes into the Extension. For example, OpenAllay product `0.2.1`
+implements Extension API `0.2.0`, so the Hello Extension uses API range
+`[0.2,0.3)` and loader dependency `>=0.2.1`.
 
 Publish one normal JAR per loader. The embedded package manifest in the Fabric
 JAR declares only `fabric`; the manifest in the NeoForge JAR declares only
