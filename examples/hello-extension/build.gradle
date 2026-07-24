@@ -1,3 +1,8 @@
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+import java.util.HexFormat
+import java.util.jar.JarFile
+
 plugins {
     id "java"
 }
@@ -115,11 +120,44 @@ tasks.register("verifyLoaderPackages") {
         }
         def fabric = tasks.named("fabricJar").get().archiveFile.get().asFile
         def neoforge = tasks.named("neoforgeJar").get().archiveFile.get().asFile
-        [fabric, neoforge].each {
-            if (!it.isFile() || it.length() == 0) {
-                throw new GradleException("Missing Extension package: ${it}")
+        def verifyPackage = { File archive, String loader, String loaderMetadata, String forbiddenMetadata ->
+            if (!archive.isFile() || archive.length() == 0) {
+                throw new GradleException("Missing Extension package: ${archive}")
             }
+            new JarFile(archive).withCloseable { jar ->
+                if (jar.getJarEntry(loaderMetadata) == null
+                        || jar.getJarEntry(forbiddenMetadata) != null) {
+                    throw new GradleException(
+                            "${loader} package has incorrect loader metadata")
+                }
+                def manifestEntry = jar.getJarEntry("META-INF/openallay-extension.json")
+                if (manifestEntry == null) {
+                    throw new GradleException("${loader} package has no Extension manifest")
+                }
+                def manifest = new JsonSlurper().parse(jar.getInputStream(manifestEntry))
+                if (manifest.id != "example:hello"
+                        || manifest.version != "0.1.0"
+                        || manifest.loaders != [loader]
+                        || manifest.modIds != ["openallay_hello_extension"]) {
+                    throw new GradleException(
+                            "${loader} package manifest disagrees with its loader package")
+                }
+            }
+            def digest = MessageDigest.getInstance("SHA-256")
+                    .digest(archive.bytes)
+            logger.lifecycle(
+                    "${archive.name} sha256=${HexFormat.of().formatHex(digest)}")
         }
+        verifyPackage(
+                fabric,
+                "fabric",
+                "fabric.mod.json",
+                "META-INF/neoforge.mods.toml")
+        verifyPackage(
+                neoforge,
+                "neoforge",
+                "META-INF/neoforge.mods.toml",
+                "fabric.mod.json")
     }
 }
 
