@@ -1,0 +1,49 @@
+plugins {
+    id 'base'
+    id 'net.fabricmc.fabric-loom' version '1.16.3' apply false
+    id 'net.neoforged.moddev' version '2.0.141' apply false
+}
+allprojects {
+    group = rootProject.group
+    version = rootProject.version
+    repositories {
+        maven { url = uri('https://maven.fabricmc.net') }
+        maven { url = uri('https://maven.latvian.dev/releases') }
+        mavenCentral()
+        maven { url = uri('https://maven.neoforged.net/releases') }
+        maven { url = uri('https://libraries.minecraft.net') }
+    }
+}
+subprojects {
+    apply plugin: 'java-library'
+    java { toolchain.languageVersion = JavaLanguageVersion.of(25); withSourcesJar() }
+    tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
+    tasks.withType(Jar).configureEach {
+        archiveBaseName = "openallay-builder-${project.name}-26.2"
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+        from(rootProject.file('LICENSE'))
+    }
+    def artifacts = providers.gradleProperty('openallayArtifactsDir').map { file(it) }
+    def artifactProperty = 'openallayCommonJar'
+    def artifact = providers.gradleProperty(artifactProperty).map { file(it) }.orElse(
+        artifacts.map { new File(it, "common/build/libs/openallay-common-26.2-${openallayVersion}.jar") })
+    if (!artifact.isPresent()) {
+        throw new GradleException("Set -PopenallayArtifactsDir=/path/to/OpenAllay or -P${artifactProperty}=/path/to/product.jar. Build OpenAllay with the invocation participant API first.")
+    }
+    dependencies { compileOnly files(artifact) }
+    tasks.named('compileJava') {
+        doFirst { if (!artifact.get().isFile()) throw new GradleException("Missing OpenAllay artifact: ${artifact.get()}") }
+    }
+    sourceSets.main.java.srcDir rootProject.file('src/shared/java')
+    sourceSets.main.resources.srcDir rootProject.file('src/shared/resources')
+    tasks.named('processResources') {
+        inputs.property('version', project.version)
+        filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml', 'META-INF/openallay-extension.json']) {
+            expand(version: project.version)
+        }
+    }
+}
+tasks.named('build') { dependsOn ':common:build', ':fabric:build', ':neoforge:build' }
+tasks.named('check') { dependsOn ':common:test', 'verifyLoaderPackages' }
+apply from: 'package-verification.gradle'

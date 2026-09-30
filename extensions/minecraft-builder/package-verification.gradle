@@ -1,0 +1,47 @@
+import groovy.json.JsonSlurper
+import java.util.jar.JarFile
+
+tasks.register('verifyLoaderPackages') {
+    group = 'verification'
+    dependsOn ':fabric:jar', ':neoforge:jar'
+    doLast {
+        ['fabric', 'neoforge'].each { loader ->
+            def archive = project(":${loader}").tasks.named('jar').get().archiveFile.get().asFile
+            new JarFile(archive).withCloseable { jar ->
+                def entry = jar.getJarEntry('META-INF/openallay-extension.json')
+                if (entry == null) throw new GradleException("Missing package manifest in ${archive}")
+                def metadata = new JsonSlurper().parse(jar.getInputStream(entry))
+                if (metadata.id != 'openallay:builder' || metadata.version != rootProject.version
+                        || metadata.loaders != [loader] || metadata.modIds != ['openallay_builder']
+                        || metadata.openAllayApiVersionRange != '[0.2.1,0.3)') {
+                    throw new GradleException("Invalid Builder package identity in ${archive}")
+                }
+                def loaderMetadata = loader == 'fabric' ? 'fabric.mod.json' : 'META-INF/neoforge.mods.toml'
+                def otherMetadata = loader == 'fabric' ? 'META-INF/neoforge.mods.toml' : 'fabric.mod.json'
+                if (jar.getJarEntry(loaderMetadata) == null || jar.getJarEntry(otherMetadata) != null)
+                    throw new GradleException("Invalid loader metadata in ${archive}")
+                if (loader == 'fabric') {
+                    def mod = new JsonSlurper().parse(jar.getInputStream(jar.getJarEntry(loaderMetadata)))
+                    if (mod.environment != 'client' || mod.id != 'openallay_builder' || mod.depends.openallay != '>=0.2.3')
+                        throw new GradleException('Builder Fabric must be client-only with product dependency')
+                } else {
+                    def entrypoint = jar.getJarEntry('dev/openallay/builder/neoforge/BuilderNeoForgeEntrypoint.class')
+                    def binary = new String(jar.getInputStream(entrypoint).readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
+                    if (!binary.contains('Lnet/neoforged/api/distmarker/Dist;') || !binary.contains('CLIENT'))
+                        throw new GradleException('Builder NeoForge entrypoint must declare client dist')
+                }
+                ['building.js', 'presets.js', 'terrain.js', 'openallay_skills/minecraft-builder/SKILL.md'].each { path ->
+                    if (jar.getJarEntry("assets/openallay_builder/${path}") == null)
+                        throw new GradleException("Missing Builder resource ${path}")
+                }
+                jar.entries().each { item ->
+                    if (item.name.startsWith('dev/openallay/') && item.name.endsWith('.class')
+                            && !item.name.startsWith('dev/openallay/builder/'))
+                        throw new GradleException("Bundled core class: ${item.name}")
+                    if (item.name.startsWith('net/minecraft/') && item.name.endsWith('.class'))
+                        throw new GradleException("Bundled game class: ${item.name}")
+                }
+            }
+        }
+    }
+}

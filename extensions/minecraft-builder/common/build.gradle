@@ -1,0 +1,15 @@
+plugins { id 'net.neoforged.moddev' }
+neoForge { neoFormVersion = neo_form_version }
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+    testImplementation 'com.google.code.gson:gson:2.14.0'
+    testImplementation 'dev.latvian.mods:rhino:2101.2.8-build.91'
+    testImplementation 'org.commonmark:commonmark:0.28.0'
+    testImplementation 'org.commonmark:commonmark-ext-gfm-tables:0.28.0'
+}
+configurations.testCompileClasspath.extendsFrom(configurations.compileClasspath)
+configurations.testRuntimeClasspath.extendsFrom(configurations.compileClasspath)
+tasks.withType(Test).configureEach { useJUnitPlatform() }
+
+sourceSets.test.java.srcDir rootProject.file('src/test/java')

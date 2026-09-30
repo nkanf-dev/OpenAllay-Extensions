@@ -22,6 +22,27 @@ independent Fabric and NeoForge packages. OpenAllay product versions and
 Extension API versions are independent; `0.2.1` currently implements Extension
 API `0.2.0`.
 
+## First-party Minecraft Builder
+
+[`extensions/minecraft-builder`](extensions/minecraft-builder) is the complete
+online construction Extension distributed by default with OpenAllay 0.2.3 source
+builds. Its Java adapter, reviewed JS modules, Skill, templates and tests live in
+this repository, not in OpenAllay core. It targets Java 25 and Minecraft 26.2 on
+Fabric and NeoForge, with client-only loader entrypoints.
+
+The native backend uses the active integrated server under explicitly authorized
+client-local unrestricted JavaScript. Installation does not enable that mode.
+It does not edit offline saves, provide a remote-server write protocol or include
+Baritone/player automation. See the package README for exact execution, undo and
+verification boundaries. Algorithms were independently implemented from the
+requested feature set; no upstream Python or Amulet runtime is distributed.
+
+Builds consume the exact core API source revision recorded in
+`openallay-source.lock.json`. The Builder quality workflow compiles that core's
+common artifact, then runs the independent Extension tests and both loader
+builds. Package availability in the public catalog still requires published,
+checksum-pinned artifacts; source inclusion is not a catalog release claim.
+
 ## Catalog
 
 [`catalog.json`](catalog.json) is the stable catalog consumed by OpenAllay’s

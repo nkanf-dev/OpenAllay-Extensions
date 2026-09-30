@@ -1,0 +1,27 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+[[mods]]
+modId="openallay_builder"
+version="${version}"
+displayName="Minecraft Builder"
+authors="OpenAllay"
+description="Full online native construction for OpenAllay."
+[[dependencies.openallay_builder]]
+modId="neoforge"
+type="required"
+versionRange="[26.2.0.25-beta,)"
+ordering="NONE"
+side="CLIENT"
+[[dependencies.openallay_builder]]
+modId="minecraft"
+type="required"
+versionRange="[26.2,26.3)"
+ordering="NONE"
+side="CLIENT"
+[[dependencies.openallay_builder]]
+modId="openallay"
+type="required"
+versionRange="[0.2.3,0.3.0)"
+ordering="AFTER"
+side="CLIENT"

@@ -85,6 +85,9 @@
         },
         "source": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "requirements": {
+          "$ref": "#/$defs/requirements"
         }
       }
     },
@@ -120,6 +123,38 @@
           "items": {
             "type": "string",
             "pattern": "^[a-z0-9_.-]+$"
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "description": "Advisory declarations only. Missing requirements do not grant authority or prevent installation or use. Omit when empty.",
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*(?::[a-z0-9_][a-z0-9_./-]*)?(?![\\s\\S])"
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+(?![\\s\\S])"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])",
+            "maxLength": 64
           }
         }
       }

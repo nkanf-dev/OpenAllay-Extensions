@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "openallay:builder",
+  "name": "Minecraft Builder",
+  "version": "${version}",
+  "loaders": [
+    "fabric"
+  ],
+  "minecraftVersionRange": "[26.2,26.3)",
+  "openAllayApiVersionRange": "[0.2.1,0.3)",
+  "modIds": [
+    "openallay_builder"
+  ],
+  "provider": "OpenAllay",
+  "summary": "Full online construction for the active integrated Minecraft server.",
+  "source": "https://github.com/nkanf-dev/OpenAllay-Extensions",
+  "requirements": {
+    "capabilities": [
+      "unrestricted-javascript"
+    ]
+  }
+}

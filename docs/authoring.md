@@ -30,6 +30,49 @@ JAR declares only `fabric`; the manifest in the NeoForge JAR declares only
 catalog groups those loader-specific artifacts into one logical Extension
 entry and selects only the current loader at install time.
 
+## Advisory requirements
+
+Schema-1 package manifests and schema-2 catalog entries may include an optional
+`requirements` object. It describes useful capabilities, Extensions, and Skills
+for the player. For example:
+
+```json
+"requirements": {
+  "capabilities": ["example:viewer-api"],
+  "extensions": ["example:viewer"],
+  "skills": ["example-workflow"]
+}
+```
+
+Each member is an array of unique, exact IDs. IDs cannot contain spaces,
+uppercase letters, wildcards, or version expressions. The full ID must match:
+
+- `capabilities`: `[a-z0-9][a-z0-9_.-]*(?::[a-z0-9_][a-z0-9_./-]*)?`;
+- `extensions`: `[a-z0-9_.-]+:[a-z0-9_./-]+`;
+- `skills`: `[a-z0-9]+(?:-[a-z0-9]+)*`, at most 64 characters.
+
+Unknown capability IDs remain valid declarations. They do not authorize
+anything. Absent members mean empty lists. Unknown members, duplicate IDs,
+invalid IDs, and non-array values are rejected. Omit `requirements` when all
+lists are empty. The catalog builder omits empty lists and the all-empty object;
+it preserves declared ID order. Entries without requirements keep their prior
+output. Other unknown fields and unsupported schema versions remain invalid.
+
+Requirements are advisory, not installation, activation, or use gates. They do
+not enable settings, install dependencies, grant permissions, or promise that
+missing APIs will work. Existing loader dependencies and Skill `required-mods`
+and `allowed-tools` keep their separate contracts. Keep catalog declarations
+consistent with the selected package where possible. After staging, the checked
+package manifest is the source for advisory display; differences in requirements
+alone are not identity mismatches. Identity, compatibility, checksums, and mod-ID
+checks still apply.
+
+Run the focused tooling tests without building any loader artifacts:
+
+```bash
+node --test scripts/requirements.test.mjs
+```
+
 ## Fabric entrypoint
 
 Declare a normal `main` entrypoint in `fabric.mod.json`, then register during

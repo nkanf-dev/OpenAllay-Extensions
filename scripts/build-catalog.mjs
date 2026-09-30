@@ -28,7 +28,8 @@ const entries = catalog.extensions.map((entry) => {
       "artifacts",
       "source"
     ],
-    "extension"
+    "extension",
+    ["requirements"]
   );
   for (const field of [
     "id",
@@ -67,10 +68,19 @@ const entries = catalog.extensions.map((entry) => {
       modIds: [...artifact.modIds].sort()
     };
   }).sort((left, right) => left.loader.localeCompare(right.loader));
-  return {
+  const normalizedEntry = {
     ...entry,
     artifacts
   };
+  if (Object.hasOwn(entry, "requirements")) {
+    const requirements = normalizeRequirements(entry.requirements, `${entry.id}: requirements`);
+    if (Object.keys(requirements).length > 0) {
+      normalizedEntry.requirements = requirements;
+    } else {
+      delete normalizedEntry.requirements;
+    }
+  }
+  return normalizedEntry;
 }).sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version));
 
 const normalized = `${JSON.stringify({ ...catalog, extensions: entries }, null, 2)}\n`;
@@ -85,9 +95,9 @@ function assert(condition, message) {
   }
 }
 
-function assertExactKeys(value, expected, label) {
+function assertExactKeys(value, expected, label, optional = []) {
   assert(value !== null && typeof value === "object" && !Array.isArray(value), `${label} must be an object`);
-  const actual = Object.keys(value).sort();
+  const actual = Object.keys(value).filter((key) => !optional.includes(key)).sort();
   const wanted = [...expected].sort();
   assert(JSON.stringify(actual) === JSON.stringify(wanted), `${label} fields do not match schema`);
 }
@@ -96,4 +106,29 @@ function assertUniqueStrings(value, label) {
   assert(Array.isArray(value), `${label} must be an array`);
   assert(value.every((item) => typeof item === "string" && item.length > 0), `${label} must contain strings`);
   assert(new Set(value).size === value.length, `${label} must contain unique strings`);
+}
+
+// Advisory only: validate exact IDs, not their current availability or permissions.
+function normalizeRequirements(value, label) {
+  const patterns = {
+    // Match the whole ID even in schema validators with line-aware end anchors.
+    capabilities: /^[a-z0-9][a-z0-9_.-]*(?::[a-z0-9_][a-z0-9_.\/-]*)?(?![\s\S])/,
+    extensions: /^[a-z0-9_.-]+:[a-z0-9_.\/-]+(?![\s\S])/,
+    skills: /^[a-z0-9]+(?:-[a-z0-9]+)*(?![\s\S])/
+  };
+  assertExactKeys(value, [], label, Object.keys(patterns));
+  const normalized = {};
+  for (const [field, pattern] of Object.entries(patterns)) {
+    if (!Object.hasOwn(value, field)) {
+      continue;
+    }
+    const ids = value[field];
+    assertUniqueStrings(ids, `${label}.${field}`);
+    assert(ids.every((id) => pattern.test(id) && (field !== "skills" || id.length <= 64)),
+      `${label}.${field} must contain exact valid IDs${field === "skills" ? " (at most 64 characters)" : ""}`);
+    if (ids.length > 0) {
+      normalized[field] = [...ids];
+    }
+  }
+  return normalized;
 }
