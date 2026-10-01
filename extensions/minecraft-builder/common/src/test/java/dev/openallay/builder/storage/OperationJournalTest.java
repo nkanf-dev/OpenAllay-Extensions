@@ -432,4 +432,58 @@ class OperationJournalTest {
         Files.writeString(directory.resolve("app-journals").resolve(operation.id() + ".json"), value.toString());
         assertThrows(IOException.class, () -> journal.load(operation.id()));
     }
+    @Test void streamedCheckpointKeepsExactCurrentShapeIncludingRetouchHistory() throws Exception {
+        var journal = new OperationJournal(directory);
+        var operation = journal.begin("world-中文", "minecraft:overworld", "\"quoted\" <tag> \ud83d\udc9a");
+        var special = new BlockSpec("minecraft:chest", Map.of("facing", "west"), "{CustomName:'\"中文\"',Items:[]}");
+        operation.recordIntents(List.of(new OperationJournal.Intent(A, AIR, special), new OperationJournal.Intent(B, AIR, STONE)));
+        operation.verifiedAll(Map.of(A, special, B, STONE));
+        operation.recordIntent(A, special, STONE);
+        operation.finish(OperationJournal.Status.FAILED, "pending retouch\n<diagnostic>");
+        var snapshot = operation.snapshot();
+        assertEquals(OperationJournal.encode(snapshot), StrictJson.parse(Files.readString(directory.resolve(operation.id() + ".json"))));
+        assertEquals(snapshot, journal.load(operation.id()));
+        assertEquals(special, snapshot.entries().getFirst().previousVerified());
+        assertEquals(snapshot, new OperationJournal(directory).load(operation.id()));
+    }
+
+    @Test void withdrawalsReuseOnlyRemovedTrailingFirstTouchSequence() throws Exception {
+        var journal = new OperationJournal(directory);
+        var operation = journal.begin("world", "minecraft:overworld", "tail order");
+        var c = new BlockPosition(20, 64, 0);
+        var d = new BlockPosition(21, 64, 0);
+        var e = new BlockPosition(22, 64, 0);
+        operation.recordIntents(List.of(new OperationJournal.Intent(A, AIR, STONE),
+                new OperationJournal.Intent(B, AIR, STONE), new OperationJournal.Intent(c, AIR, STONE)));
+        operation.abortIntents(List.of(B));
+        operation.recordIntent(d, AIR, STONE);
+        assertEquals(List.of(0L, 2L, 3L), operation.snapshot().entries().stream().map(OperationJournal.Entry::sequence).toList());
+        operation.abortIntents(List.of(c, d));
+        operation.recordIntent(e, AIR, STONE);
+        assertEquals(List.of(0L, 1L), operation.snapshot().entries().stream().map(OperationJournal.Entry::sequence).toList());
+        operation.verifiedAll(Map.of(A, STONE, e, STONE));
+        operation.recordIntent(A, STONE, CHEST);
+        operation.abortIntents(List.of(A));
+        operation.recordIntent(B, AIR, STONE);
+        assertEquals(List.of(0L, 1L, 2L), operation.snapshot().entries().stream().map(OperationJournal.Entry::sequence).toList());
+        assertEquals(operation.snapshot(), journal.load(operation.id()));
+    }
+
+    @Test void liveFinishDoesNotRescanUnrelatedHistoryButListingStillRejectsCorruption() throws Exception {
+        var journal = new OperationJournal(directory);
+        var operation = journal.begin("world", "minecraft:overworld", "independent cleanup");
+        operation.recordIntent(A, AIR, STONE);
+        operation.verified(A, STONE);
+        Path unrelated = directory.resolve("not-a-journal-id.json");
+        String corrupt = "{broken unrelated history";
+        Files.writeString(unrelated, corrupt);
+        operation.finish(OperationJournal.Status.COMPLETED, "done");
+        assertEquals(OperationJournal.Status.COMPLETED, operation.snapshot().status());
+        assertFalse(Files.exists(directory.resolve(operation.id() + "--00000000000000000001.json")));
+        assertFalse(Files.exists(directory.resolve(operation.id() + "--00000000000000000002.json")));
+        assertEquals(corrupt, Files.readString(unrelated));
+        assertThrows(IOException.class, journal::list, "Explicit history inspection must still reject corrupt records");
+        assertThrows(IOException.class, () -> new OperationJournal(directory));
+    }
+
 }

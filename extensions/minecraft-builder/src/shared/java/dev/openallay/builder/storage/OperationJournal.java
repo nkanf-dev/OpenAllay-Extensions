@@ -3,6 +3,7 @@ package dev.openallay.builder.storage;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -120,7 +121,7 @@ public final class OperationJournal {
         do { id=UUID.randomUUID().toString(); } while(files.exists(id));
         long now=clock.millis();
         Snapshot initial=new Snapshot(id,worldId,dimension,label,Status.RUNNING,now,now,"",0,List.of());
-        files.write(id,encode(initial));
+        files.write(id,writer -> writeSnapshot(writer,initial));
         Operation operation=new Operation(initial);
         active.put(id,operation);
         return operation;
@@ -186,7 +187,7 @@ public final class OperationJournal {
             Snapshot next=new Snapshot(old.id(),old.worldId(),old.dimension(),old.label(),Status.INTERRUPTED,
                     old.createdAt(),Math.max(old.updatedAt(),clock.millis()),"Operation interrupted before a terminal status was persisted",
                     old.checkpoint(),old.entries());
-            compact(next);
+            compact(next,names.deltas().getOrDefault(id,new java.util.TreeMap<>()));
             recovered.add(next);
         }
         return List.copyOf(recovered);
@@ -194,7 +195,7 @@ public final class OperationJournal {
 
     public final class Operation {
         private final String id,worldId,dimension,label;
-        private final long createdAt;
+        private final long createdAt,initialCheckpoint;
         private long updatedAt,sequence;
         private Status status;
         private String detail;
@@ -203,7 +204,7 @@ public final class OperationJournal {
         private IOException publicationFailure;
         private Operation(Snapshot snapshot) {
             id=snapshot.id();worldId=snapshot.worldId();dimension=snapshot.dimension();label=snapshot.label();
-            createdAt=snapshot.createdAt();updatedAt=snapshot.updatedAt();sequence=snapshot.checkpoint();status=snapshot.status();detail=snapshot.detail();
+            createdAt=snapshot.createdAt();initialCheckpoint=snapshot.checkpoint();updatedAt=snapshot.updatedAt();sequence=snapshot.checkpoint();status=snapshot.status();detail=snapshot.detail();
             for(Entry entry:snapshot.entries()) { entries.put(entry.position(),entry);nextTouch=Math.max(nextTouch,entry.sequence()+1); }
         }
         public String id() { return id; }
@@ -217,10 +218,18 @@ public final class OperationJournal {
             synchronized(OperationJournal.this) {
                 requireRunning();if(detached.isEmpty())return;
                 Map<BlockPosition,Entry> replacement=prepareIntents(detached);
-                JsonArray values=new JsonArray();
-                for(Intent intent:detached) { JsonObject value=new JsonObject();value.add("position",intent.position().toJson());value.add("before",intent.before().toJson());value.add("intended",intent.intended().toJson());values.add(value); }
-                JsonObject delta=delta("intents");delta.add("intents",values);
-                publish(delta);replacement.forEach(entries::put);
+                publish("intents",writer -> {
+                    writer.name("intents").beginArray();
+                    for(Intent intent:detached) {
+                        writer.beginObject();
+                        writer.name("position");writePosition(writer,intent.position());
+                        writer.name("before");writeBlock(writer,intent.before());
+                        writer.name("intended");writeBlock(writer,intent.intended());
+                        writer.endObject();
+                    }
+                    writer.endArray();
+                });
+                replacement.forEach(entries::put);
                 for(Entry entry:replacement.values())nextTouch=Math.max(nextTouch,entry.sequence()+1);
             }
         }
@@ -248,10 +257,19 @@ public final class OperationJournal {
             synchronized(OperationJournal.this) {
                 requireRunning();if(detached.isEmpty() && aborted.isEmpty())return;
                 Map<BlockPosition,Entry> replacement=prepareOutcome(detached,aborted);
-                JsonObject delta=delta("outcome");JsonArray images=new JsonArray(),withdrawn=new JsonArray();
-                detached.forEach((position,state)-> {JsonObject value=new JsonObject();value.add("position",position.toJson());value.add("actual",state.toJson());images.add(value);});
-                aborted.forEach(position->withdrawn.add(position.toJson()));delta.add("actual",images);delta.add("unstarted",withdrawn);
-                publish(delta);applyOutcome(replacement);
+                publish("outcome",writer -> {
+                    writer.name("actual").beginArray();
+                    for(var image:detached.entrySet()) {
+                        writer.beginObject();
+                        writer.name("position");writePosition(writer,image.getKey());
+                        writer.name("actual");writeBlock(writer,image.getValue());
+                        writer.endObject();
+                    }
+                    writer.endArray().name("unstarted").beginArray();
+                    for(BlockPosition position:aborted)writePosition(writer,position);
+                    writer.endArray();
+                });
+                applyOutcome(replacement);
             }
         }
         private Map<BlockPosition,Entry> prepareOutcome(Map<BlockPosition,BlockSpec> actual,Set<BlockPosition> aborted) {
@@ -279,25 +297,32 @@ public final class OperationJournal {
                 else entries.put(item.getKey(),item.getValue());
             }
             if(removed) {
-                nextTouch=0;
-                for(Entry entry:entries.values())nextTouch=Math.max(nextTouch,entry.sequence()+1);
+                // Replacements never move an existing key. Insertion order is first-touch
+                // order, so only the tail determines the next sequence after withdrawals.
+                var last=entries.lastEntry();
+                nextTouch=last==null?0:last.getValue().sequence()+1;
             }
         }
-        private JsonObject delta(String kind) {
-            JsonObject value=new JsonObject();value.addProperty("format",DELTA_FORMAT);value.addProperty("id",id);
-            value.addProperty("sequence",Math.addExact(sequence,1));value.addProperty("updatedAt",Math.max(updatedAt,clock.millis()));value.addProperty("kind",kind);return value;
-        }
-        private void publish(JsonObject delta) throws IOException {
-            long next=StrictJson.longInteger(delta.get("sequence"),"sequence");
+        private void publish(String kind,AtomicJsonFiles.JsonContent content) throws IOException {
+            long next=Math.addExact(sequence,1),time=Math.max(updatedAt,clock.millis());
             try {
-                files.write(deltaName(id,next),delta); // fsync/atomic publish before memory admission or world write.
+                files.write(deltaName(id,next),writer -> {
+                    writer.beginObject();
+                    writer.name("format").value(DELTA_FORMAT);
+                    writer.name("id").value(id);
+                    writer.name("sequence").value(next);
+                    writer.name("updatedAt").value(time);
+                    writer.name("kind").value(kind);
+                    content.write(writer);
+                    writer.endObject();
+                }); // fsync/atomic publish before memory admission or world write.
             } catch(IOException failure) {
                 // Rename/force failure may have published a record. Never overwrite its sequence
                 // or compact older memory over it; recovery must inspect the actual durable cut.
                 publicationFailure=failure;
                 throw failure;
             }
-            sequence=next;updatedAt=StrictJson.longInteger(delta.get("updatedAt"),"updatedAt");
+            sequence=next;updatedAt=time;
         }
         private void replay(JsonObject delta,long expected) {
             StrictJson.fields(delta,Set.of("format","id","sequence","updatedAt","kind"),Set.of("intents","actual","unstarted"));
@@ -325,7 +350,7 @@ public final class OperationJournal {
             synchronized(OperationJournal.this) {
                 requireRunning();if(terminal==Status.RUNNING)throw StrictJson.invalid("Terminal status required");
                 Snapshot next=new Snapshot(id,worldId,dimension,label,terminal,createdAt,Math.max(updatedAt,clock.millis()),message==null?"":message,sequence,List.copyOf(entries.values()));
-                try { compact(next); }
+                try { compact(next,initialCheckpoint); }
                 catch(IOException failure) { publicationFailure=failure;throw failure; }
                 status=terminal;updatedAt=next.updatedAt();detail=next.detail();active.remove(id);
             }
@@ -336,15 +361,68 @@ public final class OperationJournal {
         }
     }
 
-    private static String deltaName(String id,long sequence) { return id + "--" + String.format(java.util.Locale.ROOT,"%020d",sequence); }
-    private void compact(Snapshot snapshot) throws IOException {
-        files.write(snapshot.id(),encode(snapshot)); // Checkpoint is forced BEFORE removing covered deltas.
-        for(var record:names().deltas().getOrDefault(snapshot.id(),new java.util.TreeMap<>()).entrySet())if(record.getKey()<=snapshot.checkpoint())files.delete(record.getValue());
+    private static String deltaName(String id,long sequence) {
+        String digits=Long.toString(sequence);
+        return id + "--" + "00000000000000000000".substring(digits.length()) + digits;
+    }
+
+    private void compact(Snapshot snapshot,long previousCheckpoint) throws IOException {
+        files.write(snapshot.id(),writer -> writeSnapshot(writer,snapshot)); // Force checkpoint BEFORE removing deltas.
+        // This live handle published exactly this contiguous range. Do not scan unrelated
+        // historical operations at every finish: repeated small operations must stay linear.
+        for(long sequence=previousCheckpoint;sequence<snapshot.checkpoint();)files.delete(deltaName(snapshot.id(),++sequence));
+    }
+
+    private void compact(Snapshot snapshot,java.util.SortedMap<Long,String> records) throws IOException {
+        files.write(snapshot.id(),writer -> writeSnapshot(writer,snapshot));
+        // Startup already collected and checked these filenames. Reuse that one directory scan.
+        for(var record:records.entrySet())if(record.getKey()<=snapshot.checkpoint())files.delete(record.getValue());
     }
     private static void requireId(String id) {
         if(id==null)throw StrictJson.invalid("Operation id is required");
         try { if(!UUID.fromString(id).toString().equals(id))throw StrictJson.invalid("Noncanonical operation id"); }
         catch(IllegalArgumentException invalid) { throw StrictJson.invalid("Operation id must be a canonical UUID"); }
+    }
+
+    private static void writePosition(JsonWriter writer,BlockPosition position) throws IOException {
+        writer.beginArray().value(position.x()).value(position.y()).value(position.z()).endArray();
+    }
+
+    private static void writeBlock(JsonWriter writer,BlockSpec block) throws IOException {
+        writer.beginObject().name("id").value(block.id()).name("properties").beginObject();
+        for(var property:block.properties().entrySet())writer.name(property.getKey()).value(property.getValue());
+        writer.endObject();
+        if(block.blockEntity()!=null)writer.name("blockEntity").value(block.blockEntity());
+        writer.endObject();
+    }
+
+    private static void writeSnapshot(JsonWriter writer,Snapshot snapshot) throws IOException {
+        writer.beginObject();
+        writer.name("format").value(FORMAT);
+        writer.name("id").value(snapshot.id());
+        writer.name("worldId").value(snapshot.worldId());
+        writer.name("dimension").value(snapshot.dimension());
+        writer.name("label").value(snapshot.label());
+        writer.name("status").value(snapshot.status().name());
+        writer.name("createdAt").value(snapshot.createdAt());
+        writer.name("updatedAt").value(snapshot.updatedAt());
+        writer.name("detail").value(snapshot.detail());
+        writer.name("checkpoint").value(snapshot.checkpoint());
+        writer.name("entries").beginArray();
+        for(Entry entry:snapshot.entries()) {
+            writer.beginObject();
+            writer.name("position");writePosition(writer,entry.position());
+            writer.name("before");writeBlock(writer,entry.before());
+            writer.name("intended");writeBlock(writer,entry.intended());
+            if(entry.verified()!=null) {writer.name("verified");writeBlock(writer,entry.verified());}
+            if(entry.previousVerified()!=null) {
+                writer.name("previousIntended");writeBlock(writer,entry.previousIntended());
+                writer.name("previousVerified");writeBlock(writer,entry.previousVerified());
+            }
+            writer.name("sequence").value(entry.sequence());
+            writer.endObject();
+        }
+        writer.endArray().endObject();
     }
 
     static JsonObject encode(Snapshot snapshot) {

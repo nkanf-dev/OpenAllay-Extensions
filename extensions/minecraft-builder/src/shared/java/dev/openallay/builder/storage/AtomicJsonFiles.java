@@ -1,9 +1,14 @@
 package dev.openallay.builder.storage;
 
 import com.google.gson.JsonObject;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonWriter;
+import java.io.BufferedWriter;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.Reader;
-import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,6 +31,12 @@ final class AtomicJsonFiles {
     @FunctionalInterface
     interface DirectorySync {
         void force(Path directory) throws IOException;
+    }
+
+    /** Emits one complete JSON object without a full-document String or UTF-8 byte array. */
+    @FunctionalInterface
+    interface JsonContent {
+        void write(JsonWriter writer) throws IOException;
     }
 
     static final Publisher ATOMIC_MOVE = (temporary, destination) -> Files.move(temporary, destination,
@@ -96,14 +107,29 @@ final class AtomicJsonFiles {
     }
 
     synchronized void write(String name, JsonObject value) throws IOException {
+        write(name, writer -> StrictJson.GSON.toJson(value, writer));
+    }
+
+    synchronized void write(String name, JsonContent content) throws IOException {
+        Objects.requireNonNull(content, "content");
         Path destination = path(name);
-        byte[] bytes = StrictJson.GSON.toJson(value).getBytes(StandardCharsets.UTF_8);
         Path temporary = Files.createTempFile(root, ".pending-", ".tmp");
         try {
             try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE,
                     StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS)) {
-                ByteBuffer buffer = ByteBuffer.wrap(bytes);
-                while (buffer.hasRemaining()) channel.write(buffer);
+                // Closing JsonWriter validates a complete document, but must leave the channel
+                // open until force has completed. Buffering bounds memory and avoids tiny writes.
+                var output = new BufferedWriter(new OutputStreamWriter(
+                        new FilterOutputStream(Channels.newOutputStream(channel)) {
+                            @Override public void write(byte[] bytes,int offset,int length) throws IOException {
+                                out.write(bytes,offset,length);
+                            }
+                            @Override public void close() throws IOException { flush(); }
+                        }, StandardCharsets.UTF_8), 2 * 1024);
+                try (JsonWriter writer = new JsonWriter(output)) {
+                    writer.setStrictness(Strictness.STRICT);
+                    content.write(writer);
+                }
                 channel.force(true);
             }
             path(name); // Recheck directory and destination before publication.
