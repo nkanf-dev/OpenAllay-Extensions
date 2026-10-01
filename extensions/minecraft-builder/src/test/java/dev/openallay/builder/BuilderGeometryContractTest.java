@@ -20,6 +20,15 @@ final class BuilderGeometryContractTest {
         String key() { return x+","+y+","+z; }
     }
 
+    @Test void onePublicConstructionCallSubmitsOneDetachedWriteRegionRegardlessOfOwnerQuantum() {
+        JsonObject result=BuilderJsFixture.evaluate("""
+                var summary=builder.build_box(0,60,0,48,60,48,'stone');
+                return {regions:regions.length,assignments:regions[0].length,writes:writes.length,summary:summary};
+                """);
+        assertEquals(1,result.get("regions").getAsInt());assertEquals(2401,result.get("assignments").getAsInt());
+        assertEquals(2401,result.get("writes").getAsInt());assertEquals(2401,result.getAsJsonObject("summary").get("writes").getAsInt());
+    }
+
     @Test
     void boxNormalizesEveryReversedAxisAndClearsOnlyItsHollowInterior() {
         for(int flip=0;flip<8;flip++) {
@@ -406,14 +415,14 @@ final class BuilderGeometryContractTest {
     }
 
     @Test
-    void largeShapesCrossDispatchQuantaWithoutImposingABuildSizeLimit() {
+    void largeShapePlansUseOneTransportWithoutImposingABuildSizeLimit() {
         JsonObject actual=BuilderJsFixture.evaluate("""
                 const result=builder.build_box(0,5,0,599,5,0,'stone');
                 return {count:writes.length,regions:regions.map(function(r){return r.length;}),result:result};
                 """);
         assertEquals(600,actual.get("count").getAsInt());
         assertEquals(600,actual.getAsJsonObject("result").get("writes").getAsInt());
-        assertEquals(List.of(256,256,88),actual.getAsJsonArray("regions").asList().stream().map(JsonElement::getAsInt).toList());
+        assertEquals(List.of(600),actual.getAsJsonArray("regions").asList().stream().map(JsonElement::getAsInt).toList(), "Native tests enforce the owner quantum; JS sends one complete plan");
     }
 
     @Test
@@ -423,7 +432,12 @@ final class BuilderGeometryContractTest {
                 let attempts=0;
                 backend.writeRegion=function(json) {
                     attempts++;
-                    if(attempts===2) throw new Error('injected_dispatch_failure');
+                    if(attempts===1) {
+                        // A single submitted native plan may apply one owner quantum then fail.
+                        const changes=JSON.parse(String(json));
+                        original(JSON.stringify(changes.slice(0,256)));
+                        throw new Error('injected_dispatch_failure');
+                    }
                     return original(json);
                 };
                 let error='';
@@ -437,7 +451,7 @@ final class BuilderGeometryContractTest {
         assertEquals(256,actual.get("before").getAsInt());
         assertEquals(259,actual.get("count").getAsInt());
         assertEquals(3,actual.getAsJsonObject("next").get("writes").getAsInt());
-        assertEquals(3,actual.get("attempts").getAsInt());
+        assertEquals(2,actual.get("attempts").getAsInt());
         assertEquals(List.of(256,3),actual.getAsJsonArray("regions").asList().stream().map(JsonElement::getAsInt).toList());
     }
 

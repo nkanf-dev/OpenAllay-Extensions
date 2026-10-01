@@ -147,6 +147,91 @@ class BuilderSessionTest {
         assertEquals("input-only",evidence.details().get("openallay_builder:coverage"));
     }
 
+    @Test void largeWriteRegionAndUndoUseTwoOwnerActionsPerQuantumAndExactDurableImages() throws Exception {
+        Backend backend=new Backend(directory);
+        BuilderSession session=session(backend);
+        com.google.gson.JsonArray changes=new com.google.gson.JsonArray();
+        for(int i=0;i<2401;i++) {
+            JsonObject change=new JsonObject();change.addProperty("x",i/49);change.addProperty("y",64);change.addProperty("z",i%49);change.add("state",JsonParser.parseString(STONE));changes.add(change);
+        }
+        JsonObject result=JsonParser.parseString(session.writeRegion(changes.toString())).getAsJsonObject();
+        assertEquals(2401,result.get("verified").getAsInt());assertEquals(2401,backend.writeCount);
+        assertEquals(20,backend.callCount,"Ten preparation slices and ten apply slices, not per-block dispatch");
+        assertEquals(1,invocation.evidence.stream().filter(e->e.sourceId().equals("openallay_builder:write-readback")).count());
+        session.finish();
+        var original=new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(2401,original.entries().size());
+        for(var entry:original.entries()) {assertEquals(BlockSpec.fromJson(AIR),entry.before());assertEquals(BlockSpec.fromJson(STONE),entry.verified());assertFalse(entry.pending());}
+        int before=backend.callCount;
+        JsonObject undone=JsonParser.parseString(session.undo(original.id())).getAsJsonObject();
+        assertEquals(2401,undone.get("restored").getAsInt());assertEquals(0,undone.getAsJsonArray("conflicts").size());
+        assertEquals(20,backend.callCount-before);
+        for(String value:backend.blocks.values())assertEquals(AIR,value);
+        var journals=new OperationJournal(directory.resolve("journals")).list();
+        var undo=journals.stream().filter(o->!o.id().equals(original.id())).findFirst().orElseThrow();
+        assertEquals(original.reverseEntries().stream().map(OperationJournal.Entry::position).toList(),undo.entries().stream().map(OperationJournal.Entry::position).toList());
+        for(var entry:undo.entries()){assertEquals(BlockSpec.fromJson(STONE),entry.before());assertEquals(BlockSpec.fromJson(AIR),entry.verified());}
+    }
+
+    @Test void derivedExpectedImageRejectsExternalContainerBeforePreflightWithoutJournalIntent() throws Exception {
+        Backend backend=new Backend(directory);backend.blocks.put(new BlockPos(0,1,0),DIRT);
+        BuilderSession session=session(backend);
+        BuilderException failure=assertThrows(BuilderException.class,()->session.writeRegion("[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+AIR+",\"expectedBefore\":"+STONE+"}]"));
+        assertEquals("concurrent_edit",failure.code());assertEquals(0,backend.writeCount);
+        assertEquals(DIRT,backend.read(new BlockPos(0,1,0)));
+        assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
+    }
+
+    @Test void duplicatesSeparatedAcrossQuantumAreOneFinalImagePlanWithOriginalBeforeAndUndo() throws Exception {
+        List<String> applied=new ArrayList<>();
+        Backend recording=new Backend(directory) {
+            @Override public WriteOutcome write(BlockPos pos,String state) {
+                if(pos.equals(new BlockPos(0,1,0)))applied.add(state);
+                return super.write(pos,state);
+            }
+        };
+        recording.blocks.put(new BlockPos(0,1,0),DIRT);
+        BuilderSession session=session(recording);
+        com.google.gson.JsonArray changes=new com.google.gson.JsonArray();
+        JsonObject first=new JsonObject();first.addProperty("x",0);first.addProperty("y",1);first.addProperty("z",0);first.add("state",JsonParser.parseString(STONE));changes.add(first);
+        for(int i=1;i<=300;i++) {
+            JsonObject change=new JsonObject();change.addProperty("x",i);change.addProperty("y",1);change.addProperty("z",0);change.add("state",JsonParser.parseString(STONE));changes.add(change);
+        }
+        JsonObject last=first.deepCopy();last.add("state",JsonParser.parseString(AIR));changes.add(last);
+        JsonObject result=JsonParser.parseString(session.writeRegion(changes.toString())).getAsJsonObject();
+        assertEquals(301,result.get("verified").getAsInt());assertEquals(301,recording.writeCount);
+        assertEquals(List.of(AIR),applied,"Discarded intermediate STONE assignment never invokes native replacement hooks");
+        assertEquals(AIR,recording.read(new BlockPos(0,1,0)));
+        session.finish();
+        var original=new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(301,original.entries().size());
+        var entry=original.entries().getFirst();assertEquals(0,entry.position().x());
+        assertEquals(BlockSpec.fromJson(DIRT),entry.before());assertEquals(BlockSpec.fromJson(AIR),entry.intended());assertEquals(BlockSpec.fromJson(AIR),entry.verified());
+        session.undo(original.id());assertEquals(DIRT,recording.read(new BlockPos(0,1,0)));
+        assertEquals(List.of(AIR,DIRT),applied);
+    }
+
+    @Test void batchedUndoReportsInitialAndBetweenSliceConflictsWithoutOverwritingExternalImages() throws Exception {
+        Backend backend=new Backend(directory);BuilderSession session=session(backend);
+        session.writeRegion("[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":1,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":2,\"y\":1,\"z\":0,\"state\":"+STONE+"}]");session.finish();
+        var original=new OperationJournal(directory.resolve("journals")).list().getFirst();
+        backend.blocks.put(new BlockPos(2,1,0),DIRT);
+        backend.raceOnCall=backend.callCount+2;backend.racePosition=new BlockPos(1,1,0);
+        JsonObject result=JsonParser.parseString(session.undo(original.id())).getAsJsonObject();
+        assertEquals(1,result.get("restored").getAsInt());assertEquals(2,result.getAsJsonArray("conflicts").size());
+        assertEquals(AIR,backend.read(new BlockPos(0,1,0)));assertEquals(DIRT,backend.read(new BlockPos(1,1,0)));assertEquals(DIRT,backend.read(new BlockPos(2,1,0)));
+        var undo=new OperationJournal(directory.resolve("journals")).list().stream().filter(o->!o.id().equals(original.id())).findFirst().orElseThrow();
+        assertEquals(1,undo.entries().size());assertEquals(0,undo.entries().getFirst().position().x());
+    }
+
+    @Test void batchedWriteFailureRecordsActualPartialProgressAndAbortsOnlyKnownUnstarted() throws Exception {
+        Backend backend=new Backend(directory);backend.failAfterWrite=true;BuilderSession session=session(backend);
+        assertThrows(BuilderException.class,()->session.writeRegion("[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":1,\"y\":1,\"z\":0,\"state\":"+STONE+"}]"));
+        var journal=new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(1,journal.entries().size());assertEquals(BlockSpec.fromJson(DIRT),journal.entries().getFirst().verified());
+        assertEquals(1,invocation.evidence.size());assertEquals("1",invocation.evidence.getFirst().details().get("openallay_builder:count"));
+    }
+
     static class Invocation implements SessionInvocation {
         boolean cancelled,success;
         List<EvidenceMetadata> evidence=new ArrayList<>();
@@ -162,9 +247,11 @@ class BuilderSessionTest {
         boolean raceDuringRepair,failPreview,failAfterWrite,notifyChanges,raceBeforeApply;
         int readCount;
         int raceOnRead=-1;
-        int writeCount,notifyCount;
+        int writeCount,notifyCount,callCount;
+        int raceOnCall=-1;
+        BlockPos racePosition;
         Backend(Path path){this.path=path;}
-        public <T>T call(Callable<T> action){try{return action.call();}catch(RuntimeException failure){throw failure;}catch(Exception failure){throw new RuntimeException(failure);}}
+        public <T>T call(Callable<T> action){callCount++;if(callCount==raceOnCall)blocks.put(racePosition,DIRT);try{return action.call();}catch(RuntimeException failure){throw failure;}catch(Exception failure){throw new RuntimeException(failure);}}
         public void validatePosition(BlockPos pos){}
         public String read(BlockPos pos){readCount++;if((raceBeforeApply && readCount==2)||readCount==raceOnRead)blocks.put(pos,STONE);return blocks.getOrDefault(pos,AIR);}
         public String preview(BlockPos pos,String state){if(failPreview)throw new BuilderException("invalid_state","bad preview");return state;}

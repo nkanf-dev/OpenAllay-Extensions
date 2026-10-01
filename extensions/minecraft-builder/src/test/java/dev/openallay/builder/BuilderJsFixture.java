@@ -42,6 +42,31 @@ final class BuilderJsFixture {
                     const value=cells[key(x,y,z)];
                     return JSON.stringify(value===undefined ? null : value);
                 },
+                readRegion: function(json) {
+                    var b=JSON.parse(String(json)),values=[];
+                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)
+                        values.push({x:x,y:y,z:z,state:JSON.parse(backend.read(x,y,z))});
+                    return JSON.stringify(values);
+                },
+                scanColumns: function(json) {
+                    var r=JSON.parse(String(json)),columns=[];
+                    var air={'minecraft:air':true,'minecraft:cave_air':true,'minecraft:void_air':true};
+                    for(var x=r.minX;x<=r.maxX;x++)for(var z=r.minZ;z<=r.maxZ;z++) {
+                        var found={x:x,z:z,y:null,block:null,properties:null};
+                        for(var y=r.maxY-1;y>=r.minY;y--) {
+                            var s=JSON.parse(backend.read(x,y,z));
+                            if(!s||s.unknown||s.loaded===false||typeof s.id!=='string')throw new Error('fixture unobserved cell');
+                            var p=s.properties||{},id=s.id;
+                            var liquid=id==='minecraft:water'||id==='minecraft:lava'||id==='minecraft:bubble_column'||p.waterlogged==='true'||p.waterlogged===true;
+                            var plant=r.vegetation.indexOf(id)>=0||(id.indexOf('minecraft:')===0&&id.indexOf('minecraft:stripped_')!==0&&/_(log|leaves|sapling)$/.test(id)&&p.persistent!=='true'&&p.persistent!==true);
+                            if(!air[id]&&(!r.groundOnly||(!liquid&&!plant&&r.ground.indexOf(id)>=0))) {
+                                found={x:x,z:z,y:y,block:id,properties:copy(p)};break;
+                            }
+                        }
+                        columns.push(found);
+                    }
+                    return JSON.stringify(columns);
+                },
                 write: function(x,y,z,json) {
                     const state=JSON.parse(String(json));
                     cells[key(x,y,z)]=copy(state);
@@ -49,9 +74,18 @@ final class BuilderJsFixture {
                     return JSON.stringify({writes:1});
                 },
                 writeRegion: function(json) {
-                    const changes=JSON.parse(String(json));
+                    var changes=JSON.parse(String(json)),i,j,c,current,expected,a,b,keys;
+                    for(i=0;i<changes.length;i++) {
+                        c=changes[i];
+                        if(c.expectedBefore!==undefined){
+                            current=JSON.parse(backend.read(c.x,c.y,c.z));expected=c.expectedBefore;
+                            a=current&&current.properties||{};b=expected.properties||{};keys=Object.keys(a);
+                            if(!current||current.id!==expected.id||current.blockEntity!==expected.blockEntity||keys.length!==Object.keys(b).length)throw new Error('concurrent_edit: fixture expectedBefore mismatch');
+                            for(j=0;j<keys.length;j++)if(String(a[keys[j]])!==String(b[keys[j]]))throw new Error('concurrent_edit: fixture expectedBefore mismatch');
+                        }
+                    }
                     regions.push(copy(changes));
-                    changes.forEach(function(c) { backend.write(c.x,c.y,c.z,JSON.stringify(c.state)); });
+                    for(i=0;i<changes.length;i++){c=changes[i];backend.write(c.x,c.y,c.z,JSON.stringify(c.state));}
                     return JSON.stringify({writes:changes.length});
                 },
                 transformState: function(json,rotation,mirror) {
@@ -111,7 +145,29 @@ final class BuilderJsFixture {
         return execute(source).getAsJsonObject();
     }
 
-    static JsonElement execute(String source) {
+    /** Test-only JSON transport for the internal native command; all scan work stays Java-owned. */
+    static JsonObject evaluateBatched(String source, JsonElement replies) {
+        String setup = "const scanRequests=[];const scanReplies=" + replies + ";" + """
+                backend.scanColumns=function(json){
+                    scanRequests.push(JSON.parse(String(json)));
+                    if(!scanReplies.length)throw new Error('missing detached scan reply');
+                    return JSON.stringify(scanReplies.shift());
+                };
+                const batchedBuilder=building.create(backend,{seed:'contract-seed'});
+                """;
+        return evaluate(setup+source);
+    }
+
+    /** Frozen old algorithm is a test oracle only, never a runtime compatibility reader. */
+    static JsonObject evaluateLegacyTerrain(String source) {
+        try(InputStream input=BuilderJsFixture.class.getClassLoader().getResourceAsStream("fixtures/terrain-baseline.js")) {
+            if(input==null)throw new IllegalStateException("Missing legacy terrain test oracle");
+            return execute(source,new String(input.readAllBytes(),StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch(IOException failure){throw new IllegalStateException(failure);}
+    }
+
+    static JsonElement execute(String source) { return execute(source,null); }
+    private static JsonElement execute(String source,String terrainOracle) {
         Map<String,String> sources=new LinkedHashMap<>();
         sources.put("openallay_builder:building",resource("building.js"));
         // Optional companion modules are loaded from their shipped resources, never reimplemented.
@@ -119,6 +175,7 @@ final class BuilderJsFixture {
             String text=optionalResource(name+".js");
             if (text!=null) sources.put("openallay_builder:"+name,text);
         }
+        if(terrainOracle!=null)sources.put("openallay_builder:terrain",terrainOracle);
         var runtime=new RhinoJavascriptRuntime(Duration.ofSeconds(10),
                 JavascriptRuntimeLimits.DEFAULT,new JavascriptModuleCatalog(sources));
         return runtime.execute(BACKEND+source,Map.of(),Map.of(),new CancellationSignal()).value();

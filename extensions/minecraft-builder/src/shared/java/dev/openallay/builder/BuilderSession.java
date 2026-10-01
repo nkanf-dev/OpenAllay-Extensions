@@ -114,6 +114,26 @@ public final class BuilderSession implements AutoCloseable {
         return result.toString();
     }
 
+    /** Internal terrain.js bridge. Bounds use exclusive maxY; predicates are detached IDs. */
+    public String scanColumns(String requestJson) {
+        active();
+        captureStarted = Instant.now();
+        TerrainScan.Request request = TerrainScan.Request.parse(requestJson);
+        TerrainScan.Cursor cursor = new TerrainScan.Cursor(request);
+        JsonArray result = new JsonArray();
+        long observed = 0;
+        while (!cursor.done()) {
+            active();
+            TerrainScan.Slice slice = binding.call(() -> cursor.capture(binding,QUANTUM));
+            for (TerrainScan.Column column : slice.columns()) result.add(column.json());
+            observed += slice.reads();
+            reads += slice.reads();
+        }
+        active(); // Cancellation never publishes a partial scan as complete.
+        evidence("terrain-scan",observed);
+        return result.toString();
+    }
+
     public String write(int x, int y, int z, String stateJson) {
         active();
         return writeCommands(List.of(new Change(new BlockPosition(x,y,z), stateJson)));
@@ -126,7 +146,7 @@ public final class BuilderSession implements AutoCloseable {
         List<Change> commands = new ArrayList<>(changes.size());
         for (JsonElement element : changes) {
             JsonObject change = element.getAsJsonObject();
-            commands.add(new Change(new BlockPosition(BuilderBounds.integer(change,"x"), BuilderBounds.integer(change,"y"), BuilderBounds.integer(change,"z")), change.get("state").toString()));
+            commands.add(new Change(new BlockPosition(BuilderBounds.integer(change,"x"), BuilderBounds.integer(change,"y"), BuilderBounds.integer(change,"z")), change.get("state").toString(),change.has("expectedBefore")?change.get("expectedBefore").toString():null));
         }
         return writeCommands(List.copyOf(commands));
     }
@@ -140,6 +160,7 @@ public final class BuilderSession implements AutoCloseable {
         active();
         SessionLifecycle.requireWritable(state);
         if (commands.isEmpty()) return receipt(0, 0);
+        captureStarted = Instant.now();
         List<Prepared> prepared = new ArrayList<>(commands.size());
         // Validate the entire command list before any mutation, in cooperative owner slices.
         for (int offset = 0; offset < commands.size(); offset += QUANTUM) {
@@ -207,16 +228,14 @@ public final class BuilderSession implements AutoCloseable {
                     if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(slice.stream().map(Prepared::position).toList()));
                     throw failure;
                 }
-                OutcomePersistence.run(() -> operation.abortIntents(result.notAttempted()));
                 Map<BlockPosition,BlockSpec> readbacks = new java.util.LinkedHashMap<>();
                 for (Applied item : result.applied()) readbacks.put(item.position(), spec(item.actual()));
-                OutcomePersistence.run(() -> operation.verifiedAll(readbacks));
                 for (Applied item : result.applied()) {
                     verified++;
                     if (item.changed()) { changed++; writes++; }
                 }
+                OutcomePersistence.run(() -> operation.resolve(readbacks,result.notAttempted()));
                 if (result.failure() != null) throw result.failure();
-                evidence("write-readback", result.applied().size());
             }
             return receipt(changed, verified);
         } catch (IOException failure) {
@@ -225,6 +244,8 @@ public final class BuilderSession implements AutoCloseable {
         } catch (RuntimeException failure) {
             failed(failure);
             throw failure;
+        } finally {
+            if (verified > 0) evidence("write-readback",verified);
         }
     }
 
@@ -330,6 +351,8 @@ public final class BuilderSession implements AutoCloseable {
     }
     public String undo(String operationId) {
         active();
+        long restored = 0;
+        captureStarted = Instant.now();
         try {
             completeOperation();
             OperationJournal.Snapshot previous = journal.load(operationId);
@@ -340,24 +363,75 @@ public final class BuilderSession implements AutoCloseable {
             detail = "";
             JsonArray conflicts = new JsonArray();
             JsonArray uncertain = new JsonArray();
-            long restored = 0;
-            for (OperationJournal.Entry entry : previous.reverseEntries()) {
+            List<OperationJournal.Entry> entries = previous.reverseEntries();
+            for (int offset = 0; offset < entries.size(); offset += QUANTUM) {
                 active();
-                if (entry.pending()) { uncertain.add(position(pos(entry.position()))); continue; }
-                String current = binding.call(() -> readOwner(pos(entry.position())));
-                if (!entry.check(spec(current)).matches()) {
-                    conflicts.add(position(pos(entry.position())));
-                    continue;
+                List<OperationJournal.Entry> slice = List.copyOf(entries.subList(offset,Math.min(entries.size(),offset+QUANTUM)));
+                UndoPrepared prepared = binding.call(() -> {
+                    List<Prepared> commands = new ArrayList<>();
+                    List<BlockPosition> blocked = new ArrayList<>(), pending = new ArrayList<>();
+                    for (OperationJournal.Entry entry : slice) {
+                        if (entry.pending()) { pending.add(entry.position()); continue; }
+                        BlockPos pos = pos(entry.position());
+                        String current = readOwner(pos);
+                        if (!entry.check(spec(current)).matches()) { blocked.add(entry.position()); continue; }
+                        commands.add(new Prepared(entry.position(),current,binding.preview(pos,entry.before().toJsonString())));
+                    }
+                    return new UndoPrepared(List.copyOf(commands),List.copyOf(blocked),List.copyOf(pending));
+                });
+                prepared.conflicts().forEach(position -> conflicts.add(position(pos(position))));
+                prepared.uncertain().forEach(position -> uncertain.add(position(pos(position))));
+                if (prepared.commands().isEmpty()) continue;
+                operation.recordIntents(prepared.commands().stream().map(command ->
+                        new OperationJournal.Intent(command.position(),spec(command.before()),spec(command.intended()))).toList());
+                java.util.concurrent.atomic.AtomicBoolean entered = new java.util.concurrent.atomic.AtomicBoolean();
+                UndoApplied applied;
+                try {
+                    applied = binding.call(() -> {
+                        entered.set(true);
+                        List<Applied> outcomes = new ArrayList<>();
+                        List<BlockPosition> unstarted = new ArrayList<>(), races = new ArrayList<>();
+                        RuntimeException failure = null;
+                        int index = 0;
+                        for (; index < prepared.commands().size(); index++) {
+                            Prepared command = prepared.commands().get(index);
+                            boolean attempted = false;
+                            try {
+                                BlockPos pos = pos(command.position());
+                                String current = readOwner(pos);
+                                if (!spec(command.before()).equals(spec(current))) {
+                                    unstarted.add(command.position()); races.add(command.position()); continue;
+                                }
+                                attempted = true;
+                                BuilderBackend.WriteOutcome outcome = binding.write(pos,command.intended());
+                                outcomes.add(new Applied(command.position(),outcome.actual(),outcome.changed()));
+                                if (outcome.failure() != null) { failure = outcome.failure(); index++; break; }
+                            } catch (RuntimeException next) {
+                                failure = next;
+                                if (!attempted) unstarted.add(command.position());
+                                index++; break;
+                            }
+                        }
+                        for (; index < prepared.commands().size(); index++) unstarted.add(prepared.commands().get(index).position());
+                        return new UndoApplied(List.copyOf(outcomes),List.copyOf(unstarted),List.copyOf(races),failure);
+                    });
+                } catch (RuntimeException failure) {
+                    if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(prepared.commands().stream().map(Prepared::position).toList()));
+                    throw failure;
                 }
-                writeCommands(List.of(new Change(entry.position(), entry.before().toJsonString(), current)));
-                restored++;
+                Map<BlockPosition,BlockSpec> actual = new java.util.LinkedHashMap<>();
+                for (Applied item : applied.applied()) actual.put(item.position(),spec(item.actual()));
+                applied.conflicts().forEach(position -> conflicts.add(position(pos(position))));
+                for (Applied item : applied.applied()) { restored++; if (item.changed()) writes++; }
+                OutcomePersistence.run(() -> operation.resolve(actual,applied.unstarted()));
+                if (applied.failure() != null) throw applied.failure();
             }
             completeOperation();
-            JsonObject result = new JsonObject(); result.addProperty("restored", restored); result.add("conflicts", conflicts); result.add("uncertain", uncertain); result.addProperty("operationId", lastOperation);
-            evidence("undo-readback", restored);
+            JsonObject result = new JsonObject(); result.addProperty("restored",restored); result.add("conflicts",conflicts); result.add("uncertain",uncertain); result.addProperty("operationId",lastOperation);
             return result.toString();
         } catch (IOException failure) { failed(io(failure)); throw io(failure); }
         catch (RuntimeException failure) { failed(failure); throw failure; }
+        finally { if (restored > 0) evidence("undo-readback",restored); }
     }
 
     public String listOperations() {
@@ -386,7 +460,7 @@ public final class BuilderSession implements AutoCloseable {
         String id = operation == null ? lastOperation : operation.id(); if (id != null) result.addProperty("operationId", id);
         return result.toString();
     }
-    public void cancel() { active(); cancelled = true; state = SessionLifecycle.cancelled(writes, operation != null && !operation.snapshot().entries().isEmpty()); terminate(OperationJournal.Status.CANCELLED, "Explicit cancellation; already applied world changes remain"); }
+    public void cancel() { active(); cancelled = true; state = SessionLifecycle.cancelled(writes, operation != null && operation.hasEntries()); terminate(OperationJournal.Status.CANCELLED, "Explicit cancellation; already applied world changes remain"); }
     @Override public void close() {
         if (closed) return;
         bridge.checkWorker();
@@ -406,7 +480,7 @@ public final class BuilderSession implements AutoCloseable {
             } else if (frame.completedSuccessfully()) {
                 completeOperation(); state = "completed";
             } else if (cancelled) {
-                state = SessionLifecycle.cancelled(writes, operation != null && !operation.snapshot().entries().isEmpty());
+                state = SessionLifecycle.cancelled(writes, operation != null && operation.hasEntries());
                 terminate(OperationJournal.Status.CANCELLED, "Explicit cancellation; no automatic rollback");
             } else {
                 state = "interrupted";
@@ -423,7 +497,7 @@ public final class BuilderSession implements AutoCloseable {
     private void failed(RuntimeException failure) {
         detail = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         boolean revoked = frame.cancelled() || cancelled || Thread.currentThread().isInterrupted();
-        state = SessionLifecycle.failed(revoked, writes, operation != null && !operation.snapshot().entries().isEmpty());
+        state = SessionLifecycle.failed(revoked, writes, operation != null && operation.hasEntries());
         terminate(revoked ? OperationJournal.Status.CANCELLED : OperationJournal.Status.FAILED, detail);
     }
     private void terminate(OperationJournal.Status terminal, String message) {
@@ -432,7 +506,7 @@ public final class BuilderSession implements AutoCloseable {
         catch (IOException failure) { throw io(failure); }
     }
     private void evidence(String action, long count) {
-        boolean sliced = action.equals("read-region") || action.equals("connection-repair");
+        boolean sliced = action.equals("read-region") || action.equals("terrain-scan") || action.equals("write-readback") || action.equals("undo-readback") || action.equals("connection-repair");
         Instant capturedAt=Instant.now();
         Map<String,String> details=new java.util.LinkedHashMap<>();
         details.put("openallay_builder:topology","integrated-server"); details.put("openallay_builder:dimension",binding.dimension());
@@ -454,11 +528,15 @@ public final class BuilderSession implements AutoCloseable {
     private static JsonObject position(BlockPos pos) { JsonObject result = new JsonObject(); result.addProperty("x",pos.getX()); result.addProperty("y",pos.getY()); result.addProperty("z",pos.getZ()); return result; }
     private static BlockPos pos(BlockPosition pos) { return new BlockPos(pos.x(),pos.y(),pos.z()); }
     private static BlockSpec spec(String value) { return BlockSpec.fromJson(value); }
-    private static BuilderException io(IOException failure) { return new BuilderException("artifact_io", "Builder artifact/journal persistence failed", failure); }
+    private static BuilderException io(IOException failure) {
+        return new BuilderException("artifact_io", "Builder artifact/journal persistence failed", failure);
+    }
     private record Change(BlockPosition position,String state,String expectedBefore) {
         Change(BlockPosition position,String state) { this(position,state,null); }
     }
     private record Prepared(BlockPosition position,String before,String intended) {}
     private record Applied(BlockPosition position,String actual,boolean changed) {}
     private record AppliedBatch(List<Applied> applied,List<BlockPosition> notAttempted, RuntimeException failure) {}
+    private record UndoPrepared(List<Prepared> commands,List<BlockPosition> conflicts,List<BlockPosition> uncertain) {}
+    private record UndoApplied(List<Applied> applied,List<BlockPosition> unstarted,List<BlockPosition> conflicts,RuntimeException failure) {}
 }

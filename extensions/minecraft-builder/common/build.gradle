@@ -13,3 +13,4 @@ configurations.testRuntimeClasspath.extendsFrom(configurations.compileClasspath)
 tasks.withType(Test).configureEach { useJUnitPlatform() }
 
 sourceSets.test.java.srcDir rootProject.file('src/test/java')
+sourceSets.test.resources.srcDir rootProject.file('src/test/resources')

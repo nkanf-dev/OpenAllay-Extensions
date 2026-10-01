@@ -269,24 +269,26 @@ class OperationJournalTest {
         assertEquals(before, operation.snapshot());
         assertEquals(before, journal.load(operation.id()));
         fail.set(false);
-        operation.recordIntent(A, AIR, STONE);
-        var pending = operation.snapshot();
+        assertThrows(IOException.class, () -> operation.recordIntent(A,AIR,STONE),"Failed publication poisons admission; never overwrite an uncertain delta");
+        var second=journal.begin("world","minecraft:overworld","verification failure");
+        second.recordIntent(A,AIR,STONE);
+        var pending=second.snapshot();
         fail.set(true);
-        assertThrows(IOException.class, () -> operation.verified(A, STONE));
-        assertEquals(pending, operation.snapshot());
-        assertEquals(pending, journal.load(operation.id()));
-        assertThrows(IOException.class, () -> operation.finish(OperationJournal.Status.FAILED, "disk failure"));
-        assertEquals(OperationJournal.Status.RUNNING, operation.snapshot().status());
-        try (var files = Files.list(directory)) { assertEquals(1, files.count()); }
+        assertThrows(IOException.class, () -> second.verified(A,STONE));
+        assertEquals(pending,second.snapshot());
+        assertEquals(pending,journal.load(second.id()));
+        assertThrows(IOException.class, () -> second.finish(OperationJournal.Status.FAILED,"disk failure"));
+        assertEquals(OperationJournal.Status.RUNNING,second.snapshot().status());
+        try (var files=Files.list(directory)) { assertEquals(3,files.count(),"Two bases plus durable intent delta"); }
     }
 
-    @Test void futureCorruptAndMalformedJournalsAreRejectedWithoutDeletingContent() throws Exception {
+    @Test void unknownFieldsCorruptAndMalformedJournalsAreRejectedWithoutDeletingContent() throws Exception {
         var journal = new OperationJournal(directory);
         var operation = journal.begin("world", "minecraft:overworld", "valid");
         operation.recordIntent(A, AIR, STONE);
         JsonObject original = OperationJournal.encode(operation.snapshot());
         Path file = directory.resolve(operation.id() + ".json");
-        JsonObject future = original.deepCopy(); future.addProperty("version", 2);
+        JsonObject future = original.deepCopy(); future.addProperty("unknownField", 3);
         Files.writeString(file, future.toString());
         assertThrows(IOException.class, () -> journal.load(operation.id()));
         assertThrows(IOException.class, () -> new OperationJournal(directory));
@@ -301,6 +303,123 @@ class OperationJournalTest {
         Files.writeString(file, "{not-json");
         assertThrows(IOException.class, () -> journal.load(operation.id()));
         assertThrows(IllegalArgumentException.class, () -> journal.load("../../outside"));
+    }
+
+    @Test void linearDeltaBytesAndExactlyTwoDurablePublicationsPerQuantum() throws Exception {
+        var publications=new java.util.concurrent.atomic.AtomicInteger();
+        var bytes=new java.util.concurrent.atomic.AtomicLong();
+        var journal=new OperationJournal(directory,(temporary,destination)-> {
+            publications.incrementAndGet();bytes.addAndGet(Files.size(temporary));
+            AtomicJsonFiles.ATOMIC_MOVE.publish(temporary,destination);
+        },Clock.systemUTC());
+        var operation=journal.begin("world","minecraft:overworld","large fill");
+        long firstQuantumBytes=0;
+        for(int slice=0;slice<12;slice++) {
+            List<OperationJournal.Intent> intents=new java.util.ArrayList<>();
+            Map<BlockPosition,BlockSpec> actual=new java.util.LinkedHashMap<>();
+            for(int i=0;i<256;i++) {var position=new BlockPosition(slice*256+i,64,0);intents.add(new OperationJournal.Intent(position,AIR,STONE));actual.put(position,STONE);}
+            long before=bytes.get();operation.recordIntents(intents);operation.resolve(actual,List.of());
+            long quantumBytes=bytes.get()-before;
+            if(slice==0)firstQuantumBytes=quantumBytes;
+            assertTrue(quantumBytes<firstQuantumBytes*1.2,"Later quanta must not serialize prior entries");
+        }
+        assertEquals(25,publications.get()); // base + 12(intent + outcome)
+        assertEquals(3072,operation.snapshot().entries().size());
+        assertEquals(operation.snapshot(),journal.load(operation.id()));
+        operation.finish(OperationJournal.Status.COMPLETED,"all verified");
+        assertEquals(26,publications.get());
+        try(var files=Files.list(directory)){assertEquals(1,files.count(),"Completed compact snapshot, no remaining deltas");}
+        assertEquals(OperationJournal.Status.COMPLETED,journal.load(operation.id()).status());
+    }
+
+    @Test void crashCutsKeepNoIntentPendingAndVerifiedImagesDistinctWithoutWorldReplay() throws Exception {
+        var emptyJournal=new OperationJournal(directory.resolve("before-intent"));
+        var empty=emptyJournal.begin("world","minecraft:overworld","empty");
+        assertTrue(new OperationJournal(directory.resolve("before-intent")).load(empty.id()).entries().isEmpty());
+        var intentJournal=new OperationJournal(directory.resolve("after-intent"));
+        var pending=intentJournal.begin("world","minecraft:overworld","admitted");
+        pending.recordIntents(List.of(new OperationJournal.Intent(A,AIR,STONE),new OperationJournal.Intent(B,AIR,CHEST)));
+        // Same disk cut covers after-intent/before-apply AND mid-apply before detached readback.
+        var interrupted=new OperationJournal(directory.resolve("after-intent")).load(pending.id());
+        assertEquals(OperationJournal.Status.INTERRUPTED,interrupted.status());
+        assertTrue(interrupted.entries().stream().allMatch(OperationJournal.Entry::pending));
+        assertTrue(interrupted.entries().stream().noneMatch(OperationJournal.Entry::undoEligible));
+        var outcomeJournal=new OperationJournal(directory.resolve("after-outcome"));
+        var actual=outcomeJournal.begin("world","minecraft:overworld","partial");
+        actual.recordIntents(List.of(new OperationJournal.Intent(A,AIR,CHEST),new OperationJournal.Intent(B,AIR,STONE)));
+        actual.resolve(Map.of(A,STONE),List.of(B));
+        actual.recordIntent(B,AIR,CHEST);
+        var recovered=new OperationJournal(directory.resolve("after-outcome")).load(actual.id());
+        assertEquals(STONE,recovered.entries().getFirst().verified(),"Actual, not intended, survived outcome cut");
+        assertTrue(recovered.entries().getLast().pending(),"Next admitted quantum remains uncertain");
+    }
+
+    @Test void missingCorruptAndMismatchedDeltaSequenceFailsWithoutRepairingArtifacts() throws Exception {
+        var journal=new OperationJournal(directory);var operation=journal.begin("world","minecraft:overworld","gap");
+        operation.recordIntent(A,AIR,STONE);operation.verified(A,STONE);operation.recordIntent(B,AIR,CHEST);
+        Path first=directory.resolve(operation.id()+"--00000000000000000001.json");
+        byte[] original=Files.readAllBytes(first);Files.delete(first);
+        assertThrows(IOException.class,()->journal.load(operation.id()));
+        assertThrows(IOException.class,()->new OperationJournal(directory));
+        Files.write(first,original);
+        Files.writeString(first,"{broken");assertThrows(IOException.class,()->journal.load(operation.id()));
+        Files.write(first,original);
+        JsonObject mismatched=StrictJson.parse(new String(original,java.nio.charset.StandardCharsets.UTF_8));mismatched.addProperty("sequence",2);
+        Files.writeString(first,mismatched.toString());assertThrows(IOException.class,()->journal.load(operation.id()));
+        assertEquals(mismatched.toString(),Files.readString(first),"Failure does not rewrite corrupt records");
+    }
+
+    @Test void compactionCutsRetainDeltasUntilCheckpointPublishAndIgnoreCoveredSegmentsAfterPublish() throws Exception {
+        AtomicBoolean beforeRename=new AtomicBoolean(),afterRename=new AtomicBoolean();
+        var journal=new OperationJournal(directory,(temporary,destination)-> {
+            if(beforeRename.get() && !destination.getFileName().toString().contains("--"))throw new IOException("checkpoint before rename");
+            AtomicJsonFiles.ATOMIC_MOVE.publish(temporary,destination);
+            if(afterRename.get() && !destination.getFileName().toString().contains("--"))throw new IOException("checkpoint after rename before cleanup");
+        },Clock.systemUTC());
+        var operation=journal.begin("world","minecraft:overworld","compact");operation.recordIntent(A,AIR,STONE);operation.verified(A,STONE);
+        beforeRename.set(true);assertThrows(IOException.class,()->operation.finish(OperationJournal.Status.COMPLETED,"done"));
+        assertEquals(OperationJournal.Status.RUNNING,journal.load(operation.id()).status());
+        try(var files=Files.list(directory)){assertEquals(3,files.count());}
+        beforeRename.set(false);
+        assertThrows(IOException.class,()->operation.recordIntent(B,AIR,CHEST),"Uncertain checkpoint publication poisons the old handle even when rename did not occur");
+        // Independently model a checkpoint that renamed but failed before cleanup.
+        Path secondDirectory=directory.resolve("after-checkpoint-rename");
+        var secondJournal=new OperationJournal(secondDirectory,(temporary,destination)-> {
+            AtomicJsonFiles.ATOMIC_MOVE.publish(temporary,destination);
+            if(afterRename.get() && !destination.getFileName().toString().contains("--"))throw new IOException("checkpoint after rename before cleanup");
+        },Clock.systemUTC());
+        var second=secondJournal.begin("world","minecraft:overworld","compact after rename");second.recordIntent(A,AIR,STONE);second.verified(A,STONE);
+        afterRename.set(true);assertThrows(IOException.class,()->second.finish(OperationJournal.Status.COMPLETED,"done"));
+        var compacted=secondJournal.load(second.id());assertEquals(OperationJournal.Status.COMPLETED,compacted.status());assertEquals(STONE,compacted.entries().getFirst().verified());
+        afterRename.set(false);assertThrows(IOException.class,()->second.recordIntent(B,AIR,CHEST),"Old handle must never add deltas after uncertain terminal publication");
+        assertThrows(IOException.class,()->second.finish(OperationJournal.Status.FAILED,"cannot relabel terminal disk image"));
+        try(var files=Files.list(secondDirectory)){assertEquals(3,files.count(),"Covered deltas may survive cleanup crash");}
+        assertEquals(compacted,new OperationJournal(secondDirectory).load(second.id()));
+    }
+
+    @Test void deltaPublicationFailureAfterRenameCannotBeOverwrittenOrCompactedFromStaleMemory() throws Exception {
+        AtomicBoolean afterRename=new AtomicBoolean();
+        var journal=new OperationJournal(directory,(temporary,destination)-> {
+            AtomicJsonFiles.ATOMIC_MOVE.publish(temporary,destination);
+            if(afterRename.get() && destination.getFileName().toString().contains("--"))throw new IOException("after delta rename before directory force");
+        },Clock.systemUTC());
+        var operation=journal.begin("world","minecraft:overworld","uncertain publish");
+        afterRename.set(true);assertThrows(IOException.class,()->operation.recordIntent(A,AIR,STONE));
+        assertTrue(operation.snapshot().entries().isEmpty(),"Memory admission requires successful durable publication");
+        var durable=journal.load(operation.id());assertTrue(durable.entries().getFirst().pending());
+        afterRename.set(false);assertThrows(IOException.class,()->operation.recordIntent(B,AIR,CHEST));
+        assertThrows(IOException.class,()->operation.finish(OperationJournal.Status.FAILED,"cannot compact stale memory"));
+        assertEquals(durable,journal.load(operation.id()));
+        var recovered=new OperationJournal(directory).load(operation.id());
+        assertEquals(OperationJournal.Status.INTERRUPTED,recovered.status());assertTrue(recovered.entries().getFirst().pending());
+    }
+
+    @Test void malformedCurrentJournalIsRejectedWithoutMigrationDeletionOrReplay() throws Exception {
+        String id=java.util.UUID.randomUUID().toString();Path file=directory.resolve(id+".json");
+        String content="{\"format\":\"openallay:operation-journal\",\"id\":\""+id+"\"}";
+        Files.writeString(file,content);
+        assertThrows(IOException.class,()->new OperationJournal(directory));
+        assertEquals(content,Files.readString(file));
     }
 
     @Test void operationIdsMustMatchTheirFileAndNoArbitraryWorldPathIsOpened() throws Exception {

@@ -3,7 +3,7 @@
 - `scan_structure(x1,y1,z1,x2,y2,z2,{includeAir:false,metadata:{}})` normalizes
   inclusive bounds and returns a detached palette-deduplicated template.
 - `save_template(template,name)` saves under the Extension template store.
-- `load_template(name)` loads and validates the versioned template.
+- `load_template(name)` loads and validates the current template.
 - `list_templates()` lists stored templates.
 - `paste_structure(template,x,y,z,options?)` uses the input as the minimum
   corner of the transformed structure. `rotation` (or `rotate`) accepts any
@@ -38,9 +38,9 @@ Paste journals direct assignments and explicit shape repairs, not later physics
 cascades. It is not an atomic world transaction. See [execution](execution.md)
 for conflict and uncertain-intent handling during undo.
 
-Schema version 1:
+Latest internal shape (no internal version field):
 ```json
-{"format":"openallay:structure","version":1,"size":[2,1,1],
+{"format":"openallay:structure","size":[2,1,1],
  "includesAir":false,"gameVersion":"26.2","dataVersion":0,
  "palette":[{"id":"minecraft:chest","properties":{"facing":"north"}}],
  "blocks":[{"pos":[0,0,0],"state":0,"blockEntity":"{Items:[]}"}],
@@ -50,4 +50,4 @@ The example dataVersion is illustrative; use the actual native context value.
 Template names are single names containing letters, numbers, dot, underscore
 or hyphen, starting with a letter or number. Filesystem paths and traversal
 are rejected. The native store performs atomic writes and validates corruption,
-size, duplicate cells, palette indices and schema versions on load.
+size, duplicate cells, palette indices and the strict current shape on load.

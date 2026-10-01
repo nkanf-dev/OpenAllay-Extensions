@@ -123,6 +123,11 @@ final class AtomicJsonFiles {
         }
     }
 
+    /** Remove only records covered by an already durably published checkpoint. */
+    synchronized void delete(String name) throws IOException {
+        Files.deleteIfExists(path(name));
+    }
+
     synchronized List<String> names() throws IOException {
         checkDirectory();
         List<String> names = new ArrayList<>();

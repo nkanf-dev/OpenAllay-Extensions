@@ -63,6 +63,19 @@ public final class NativeBlockCodec {
         return encode(state, entity == null ? null : save(level, entity));
     }
 
+    /** Terrain reads preserve IDs/properties, but never serialize container content. */
+    static dev.openallay.builder.storage.BlockSpec terrainState(ServerLevel level, BlockPos pos) {
+        checkOwnerAndPosition(level,pos);
+        BlockState state = level.getBlockState(pos);
+        if (state.hasBlockEntity() && level.getBlockEntity(pos) == null)
+            throw new BuilderException("missing_block_entity", "Missing live block entity at " + pos);
+        Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        if (id == null) throw new IllegalArgumentException("Cannot encode an unregistered block");
+        Map<String,String> properties = new java.util.TreeMap<>();
+        state.getValues().forEach(value -> properties.put(value.property().getName(),value.valueName()));
+        return new dev.openallay.builder.storage.BlockSpec(id.toString(),properties);
+    }
+
     /**
      * Decodes a registered block and its properties without registry default fallback.
      * Omitted properties use the block's native defaults. Present values must be strings.

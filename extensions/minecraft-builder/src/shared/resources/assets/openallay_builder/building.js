@@ -37,7 +37,8 @@ var GROUND=qualifiedList("andesite basalt bedrock blackstone blue_ice calcite cl
 var BUILDING=qualifiedList("acacia_leaves acacia_log acacia_planks acacia_stairs azalea_leaves bamboo_planks barrel birch_door birch_fence birch_leaves birch_log birch_planks birch_slab birch_stairs birch_wood bookshelf brick_slab brick_stairs bricks campfire cherry_log cherry_planks chest cobblestone cobblestone_slab cobblestone_stairs cracked_stone_bricks crafting_table crimson_planks cyan_stained_glass dark_oak_door dark_oak_fence dark_oak_leaves dark_oak_log dark_oak_planks dark_oak_slab dark_oak_stairs dark_oak_wood deepslate_bricks diamond_block furnace glass glass_pane glowstone gold_block iron_block iron_door jungle_leaves jungle_log jungle_planks jungle_stairs ladder lantern light_blue_stained_glass light_gray_concrete light_gray_stained_glass light_gray_terracotta light_gray_wool mangrove_log mangrove_planks mossy_cobblestone mossy_stone_bricks oak_door oak_fence oak_fence_gate oak_leaves oak_log oak_planks oak_slab oak_stairs oak_wood orange_stained_glass orange_terracotta polished_andesite polished_blackstone polished_blackstone_bricks polished_deepslate polished_diorite polished_granite quartz_block quartz_pillar sandstone_stairs scaffolding sea_lantern smooth_quartz smooth_stone smooth_stone_slab spruce_door spruce_fence spruce_fence_gate spruce_leaves spruce_log spruce_planks spruce_slab spruce_stairs spruce_wood stone_brick_slab stone_brick_stairs stone_bricks stone_slab stone_stairs stripped_acacia_log stripped_birch_log stripped_dark_oak_log stripped_jungle_log stripped_oak_log stripped_spruce_log torch wall_torch warped_planks white_concrete white_stained_glass white_terracotta white_wool");
 exports.BLOCK_ALIASES=clone(ALIASES);exports.FLOWERS=FLOWERS.slice();exports.POTTED_FLOWERS=POTTED.slice();exports.NATURAL_GROUND=GROUND.slice();exports.BUILDING_BLOCKS=BUILDING.slice();exports._fix_block_name=qualify;
 exports.create=function(backend,settings) {
-    settings=options(settings); if(!backend || typeof backend.read!=="function" || typeof backend.write!=="function") throw new Error("backend requires read and write");
+    settings=options(settings); if(!backend)throw new Error("backend is required");
+    ["context","read","write","writeRegion","readRegion","scanColumns"].forEach(function(name){if(typeof backend[name]!=="function")throw new Error("backend requires "+name);});
     var api={},written=0,random=rng(settings.seed),closed=false,heightContext=null,pending=[],batchDepth=0;
     function flush(){if(!pending.length)return;var changes=pending;pending=[];requireMethod("writeRegion").call(backend,JSON.stringify(changes));}
 
@@ -45,13 +46,10 @@ exports.create=function(backend,settings) {
     function context() { var c=decode(requireMethod("context").call(backend)); integer(c.minY,"minY");integer(c.maxY,"maxY");if(c.maxY<=c.minY)throw new Error("invalid world height");return c; }
     function pos(x,y,z) { if(closed)throw new Error("builder session is closed");integer(x,"x");integer(y,"y");integer(z,"z"); var c=heightContext||(heightContext=context()); if(y<c.minY||y>=c.maxY)throw new Error("Y outside current dimension build height"); }
     function summary(label,before) { return {operation:label,writes:written-before}; }
-    function put(x,y,z,s) { pos(x,y,z);s=state(s);if(batchDepth>0&&typeof backend.writeRegion==="function"){pending.push({x:x,y:y,z:z,state:s});written++;if(pending.length>=256)flush();}else{backend.write(x,y,z,JSON.stringify(s));written++;} }
+    function put(x,y,z,s) { pos(x,y,z);s=state(s);if(batchDepth>0){pending.push({x:x,y:y,z:z,state:s});written++;}else{backend.write(x,y,z,JSON.stringify(s));written++;} }
     function batch(changes) {
         flush();var i;for(i=0;i<changes.length;i++){pos(changes[i].x,changes[i].y,changes[i].z);changes[i].state=state(changes[i].state);}
-        if(typeof backend.writeRegion==="function") { var result=decode(backend.writeRegion(JSON.stringify(changes)));written+=changes.length;return result; }
-        var before=[];for(i=0;i<changes.length;i++)before.push(api.get_block_full(changes[i].x,changes[i].y,changes[i].z));
-        try { for(i=0;i<changes.length;i++)put(changes[i].x,changes[i].y,changes[i].z,changes[i].state); }
-        catch(error) { var restoration=[];for(var j=i-1;j>=0;j--)try{backend.write(changes[j].x,changes[j].y,changes[j].z,JSON.stringify(before[j]));}catch(e){restoration.push(String(e));} throw new Error(String(error)+(restoration.length?"; rollback incomplete: "+restoration.join("; "):"; batch restored")); }
+        var result=decode(backend.writeRegion(JSON.stringify(changes)));written+=changes.length;return result;
     }
     function checkBounds(b) { pos(b.minX,b.minY,b.minZ);pos(b.maxX,b.maxY,b.maxZ);return b; }
     api.context=context;
@@ -143,7 +141,9 @@ exports.create=function(backend,settings) {
     function templateName(name) {if(typeof name!=="string"||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)||name==="."||name==="..")throw new Error("invalid template name");return name;}
     function canonicalState(s){var p={},keys=Object.keys(s.properties).sort();for(var i=0;i<keys.length;i++)p[keys[i]]=s.properties[keys[i]];return {id:s.id,properties:p};}
     function validateTemplate(t) {
-        var i,j;t=clone(t);if(t.format!=="openallay:structure"||t.version!==1)throw new Error("unsupported template format/version");
+        var i,j;t=clone(t);if(t.format!=="openallay:structure")throw new Error("unsupported template format");
+        var allowed={format:true,size:true,includesAir:true,gameVersion:true,dataVersion:true,palette:true,blocks:true,metadata:true};
+        Object.keys(t).forEach(function(name){if(!allowed[name])throw new Error("unknown template field: "+name);});
         if(!Array.isArray(t.size)||t.size.length!==3)throw new Error("template size must contain three dimensions");for(i=0;i<3;i++)positive(t.size[i],"template size");
         if(typeof t.includesAir!=="boolean"||typeof t.gameVersion!=="string"||!t.gameVersion)throw new Error("template requires includesAir and gameVersion");nonnegative(t.dataVersion,"dataVersion");
         t.metadata=options(t.metadata);
@@ -152,9 +152,18 @@ exports.create=function(backend,settings) {
         return t;
     }
     api.scan_structure=function(x1,y1,z1,x2,y2,z2,o) {
-        o=options(o);var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2)),c=context(),t={format:"openallay:structure",version:1,size:[b.maxX-b.minX+1,b.maxY-b.minY+1,b.maxZ-b.minZ+1],includesAir:!!o.includeAir,gameVersion:String(c.gameVersion||c.version),dataVersion:c.dataVersion,palette:[],blocks:[],metadata:clone(o.metadata||{})},indices={};
+        o=options(o);var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2)),c=context(),t={format:"openallay:structure",size:[b.maxX-b.minX+1,b.maxY-b.minY+1,b.maxZ-b.minZ+1],includesAir:!!o.includeAir,gameVersion:String(c.gameVersion||c.version),dataVersion:c.dataVersion,palette:[],blocks:[],metadata:clone(o.metadata||{})},indices={};
         if(typeof t.dataVersion!=="number")throw new Error("native context does not provide dataVersion");
-        for(var x=b.minX;x<=b.maxX;x++)for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++){var s=api.get_block_full(x,y,z);if(!o.includeAir&&isAir(s))continue;var p=canonicalState(s),key=JSON.stringify(p),index=indices[key];if(index===undefined){index=t.palette.length;indices[key]=index;t.palette.push(p);}var cell={pos:[x-b.minX,y-b.minY,z-b.minZ],state:index};if(s.blockEntity!==undefined)cell.blockEntity=s.blockEntity;t.blocks.push(cell);}return validateTemplate(t);
+        function capture(x,y,z,s){s=state(s);if(!o.includeAir&&isAir(s))return;var p=canonicalState(s),key=JSON.stringify(p),index=indices[key];if(index===undefined){index=t.palette.length;indices[key]=index;t.palette.push(p);}var cell={pos:[x-b.minX,y-b.minY,z-b.minZ],state:index};if(s.blockEntity!==undefined)cell.blockEntity=s.blockEntity;t.blocks.push(cell);}
+        {
+            flush();var cells=decode(backend.readRegion(JSON.stringify(b))),width=b.maxX-b.minX+1,depth=b.maxZ-b.minZ+1,index=0;
+            for(var x=b.minX;x<=b.maxX;x++)for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++){
+                index=(y-b.minY)*width*depth+(z-b.minZ)*width+x-b.minX;
+                var cell=cells[index];if(!cell||cell.x!==x||cell.y!==y||cell.z!==z||!cell.state||cell.state.unknown||cell.state.loaded===false)throw new Error("block is unobserved at "+[x,y,z]);
+                capture(x,y,z,cell.state);
+            }
+        }
+        return validateTemplate(t);
     };
     api.save_template=function(template,name) {name=templateName(name);requireMethod("saveTemplate").call(backend,name,JSON.stringify(validateTemplate(template)));return {name:name,saved:true};};
     api.load_template=function(name) {return validateTemplate(decode(requireMethod("loadTemplate").call(backend,templateName(name))));};
@@ -174,13 +183,26 @@ exports.create=function(backend,settings) {
         var c=context(),size=legacy.size||legacy.dimensions;if(size&&!Array.isArray(size))size=[size.width||size.x,size.height||size.y,size.depth||size.z];
         var parsed=[],max=[-Infinity,-Infinity,-Infinity],min=[0,0,0],i,j;
         for(i=0;i<legacy.blocks.length;i++){var old=legacy.blocks[i],p=old.pos||old.position||[old.x,old.y,old.z];if(!Array.isArray(p)||p.length!==3)throw new Error("legacy position is invalid");for(j=0;j<3;j++){integer(p[j]);max[j]=Math.max(max[j],p[j]);min[j]=Math.min(min[j],p[j]);}var raw=old.block!==undefined?old.block:(old.name!==undefined?old.name:old.id);if(typeof raw==="number"&&legacy.palette)raw=legacy.palette[raw];if(raw===undefined&&old.state!==undefined&&legacy.palette)raw=legacy.palette[old.state];var s=state(raw,old.properties||old.props);if(old.blockEntity!==undefined)s.blockEntity=old.blockEntity;parsed.push({pos:p,state:s});}
-        if(!size)size=[max[0]-min[0]+1,max[1]-min[1]+1,max[2]-min[2]+1];var t={format:"openallay:structure",version:1,size:size,includesAir:!!o.includeAir,gameVersion:String(c.gameVersion||c.version),dataVersion:c.dataVersion,palette:[],blocks:[],metadata:{importedLegacy:true,legacy:clone(legacy.meta||legacy.metadata||{})}},indices={};
+        if(!size)size=[max[0]-min[0]+1,max[1]-min[1]+1,max[2]-min[2]+1];var t={format:"openallay:structure",size:size,includesAir:!!o.includeAir,gameVersion:String(c.gameVersion||c.version),dataVersion:c.dataVersion,palette:[],blocks:[],metadata:{importedLegacy:true,legacy:clone(legacy.meta||legacy.metadata||{})}},indices={};
         for(i=0;i<parsed.length;i++){var q=parsed[i],ss=canonicalState(q.state),k=JSON.stringify(ss),idx=indices[k];if(idx===undefined){idx=t.palette.length;indices[k]=idx;t.palette.push(ss);}var out={pos:[q.pos[0]-min[0],q.pos[1]-min[1],q.pos[2]-min[2]],state:idx};if(q.state.blockEntity!==undefined)out.blockEntity=q.state.blockEntity;t.blocks.push(out);if(isAir(q.state))t.includesAir=true;}return validateTemplate(t);
     };
     var util={integer:integer,positive:positive,options:options,state:state,summary:summary,count:function(){return written;},rng:rng,seed:settings.seed===undefined?0:settings.seed};
+    util.readRegion=function(request){
+        if(closed)throw new Error("builder session is closed");
+        flush();return decode(backend.readRegion(JSON.stringify(request)));
+    };
+    util.observedEdits=function(changes){
+        flush();var i;for(i=0;i<changes.length;i++){pos(changes[i].x,changes[i].y,changes[i].z);changes[i].state=state(changes[i].state);changes[i].expectedBefore=state(changes[i].expectedBefore);}
+        var result=decode(backend.writeRegion(JSON.stringify(changes)));written+=changes.length;return result;
+    };
+    util.scanColumns=function(request){
+        if(closed)throw new Error("builder session is closed");
+        flush();return decode(backend.scanColumns(JSON.stringify(request)));
+    };
     require("openallay_builder:terrain").install(api,util);
     require("openallay_builder:presets").install(api,util);
-    // Internal dispatch quantum, not a user-facing build limit. No JS callback enters Java.
+    // Collect contiguous geometry plans; explicit native reads/linked edits are barriers.
+    // Java owns cooperative scheduling. No JS callback enters a game owner thread.
     Object.keys(api).forEach(function(name){
         if((name.indexOf("build_")===0||name.indexOf("place_")===0||name==="flatten_area"||name==="clear_vegetation")&&name!=="place_block"){
             var method=api[name];api[name]=function(){batchDepth++;var result;try{result=method.apply(api,arguments);}catch(error){written-=pending.length;pending=[];throw error;}finally{batchDepth--;}if(batchDepth===0)flush();return result;};

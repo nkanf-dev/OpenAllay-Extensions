@@ -8,13 +8,8 @@ import net.minecraft.world.level.saveddata.SavedDataType;
 
 /** Save incarnation owned and persisted by Minecraft's live SavedData subsystem. */
 final class BuilderWorldIdentity extends SavedData {
-    static final Codec<BuilderWorldIdentity> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance -> instance.group(
-            Codec.INT.fieldOf("version").forGetter(value -> 1),
-            Codec.STRING.fieldOf("uuid").forGetter(value -> value.id.toString())
-    ).apply(instance,(version,id) -> {
-        if(version != 1) throw new IllegalArgumentException("Unsupported Builder world identity version: "+version);
-        return new BuilderWorldIdentity(UUID.fromString(id));
-    }));
+    static final Codec<BuilderWorldIdentity> CODEC = Codec.STRING.fieldOf("uuid")
+            .xmap(id -> new BuilderWorldIdentity(UUID.fromString(id)),value -> value.id.toString()).codec();
     static final SavedDataType<BuilderWorldIdentity> TYPE = new SavedDataType<>(
             Identifier.fromNamespaceAndPath("openallay_builder","world_identity"), BuilderWorldIdentity::new, CODEC, net.minecraft.util.datafix.DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
     private final UUID id;

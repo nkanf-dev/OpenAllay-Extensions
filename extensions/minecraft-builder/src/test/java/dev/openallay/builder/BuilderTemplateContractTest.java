@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 final class BuilderTemplateContractTest {
     private static final String ASYMMETRIC = """
-            const template={format:'openallay:structure',version:1,size:[3,2,4],includesAir:false,
+            const template={format:'openallay:structure',size:[3,2,4],includesAir:false,
                 gameVersion:'26.2',dataVersion:5000,metadata:{},
                 palette:[
                     {id:'minecraft:oak_stairs',properties:{facing:'north',half:'bottom',shape:'straight'}},
@@ -21,6 +21,26 @@ final class BuilderTemplateContractTest {
                 blocks:[{pos:[0,0,0],state:0},{pos:[2,1,1],state:1},{pos:[1,0,3],state:2},
                         {pos:[0,1,2],state:3,blockEntity:'{id:"minecraft:chest",Items:[{Slot:0b,count:7,id:"minecraft:stone"}],Long:12L,Ints:[I;1,2,3]}'}]};
             """;
+
+    @Test void nativeRegionCaptureKeepsLegacyTemplateOrderingFullPropertiesAndPerCellSnbt() {
+        JsonObject result=BuilderJsFixture.evaluate("""
+                for(var x=-1;x<=1;x++)for(var y=4;y<=5;y++)for(var z=7;z<=8;z++)
+                    seed(x,y,z,{id:'minecraft:stone',properties:{sample:x+','+y+','+z}});
+                seed(0,5,8,{id:'minecraft:chest',properties:{facing:'west'},blockEntity:'{Items:[]}'});
+                var baseline=builder.scan_structure(1,5,8,-1,4,7,{includeAir:true});
+                var captured=0;
+                backend.readRegion=function(json){
+                    captured++;var b=JSON.parse(String(json)),values=[];
+                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)
+                        values.push({x:x,y:y,z:z,state:copy(cells[key(x,y,z)])});
+                    return JSON.stringify(values);
+                };
+                backend.read=function(){throw new Error('per-block capture round trip forbidden');};
+                var batched=builder.scan_structure(1,5,8,-1,4,7,{includeAir:true});
+                return {baseline:baseline,batched:batched,captured:captured,writes:writes.length};
+                """);
+        assertEquals(result.get("baseline"),result.get("batched"));assertEquals(1,result.get("captured").getAsInt());assertEquals(0,result.get("writes").getAsInt());
+    }
 
     @Test
     void scanUsesRelativeCoordinatesReversedBoundsAndDeduplicatesCanonicalPaletteStates() {
@@ -33,7 +53,6 @@ final class BuilderTemplateContractTest {
                 """);
         JsonObject t=actual.getAsJsonObject("template");
         assertEquals("openallay:structure",t.get("format").getAsString());
-        assertEquals(1,t.get("version").getAsInt());
         assertArray(t.getAsJsonArray("size"),3,1,1);
         assertFalse(t.get("includesAir").getAsBoolean());
         assertEquals("26.2",t.get("gameVersion").getAsString());
@@ -120,7 +139,7 @@ final class BuilderTemplateContractTest {
     void explicitAirMissingCellsAndStructureVoidHaveDifferentPasteSemantics() {
         for(boolean replace:List.of(false,true)) for(boolean includeAir:List.of(false,true)) {
             JsonObject actual=BuilderJsFixture.evaluate("""
-                    const template={format:'openallay:structure',version:1,size:[4,1,1],includesAir:true,
+                    const template={format:'openallay:structure',size:[4,1,1],includesAir:true,
                         gameVersion:'26.2',dataVersion:5000,palette:[
                             {id:'minecraft:stone',properties:{}},{id:'minecraft:air',properties:{}},
                             {id:'minecraft:structure_void',properties:{}}],blocks:[
@@ -160,8 +179,8 @@ final class BuilderTemplateContractTest {
     void corruptSchemasFailBeforeAnyWriteOrNativeStateTransform() {
         JsonObject actual=BuilderJsFixture.evaluate(ASYMMETRIC+"""
                 const mutations=[
-                    function(t){t.format='foreign:structure';},function(t){t.version=2;},
-                    function(t){delete t.version;},function(t){t.size=[1,2];},
+                    function(t){t.format='foreign:structure';},function(t){t.unknownField=2;},
+                    function(t){delete t.format;},function(t){t.size=[1,2];},
                     function(t){t.size[0]=0;},function(t){t.size[0]=1.5;},
                     function(t){delete t.includesAir;},function(t){t.gameVersion='';},
                     function(t){t.dataVersion=-1;},function(t){t.palette={};},
@@ -227,7 +246,6 @@ final class BuilderTemplateContractTest {
                 """);
         JsonObject t=actual.getAsJsonObject("template");
         assertEquals("openallay:structure",t.get("format").getAsString());
-        assertEquals(1,t.get("version").getAsInt());
         assertArray(t.getAsJsonArray("size"),3,2,2);
         assertTrue(t.get("includesAir").getAsBoolean());
         assertEquals(3,t.getAsJsonArray("palette").size());

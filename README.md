@@ -59,7 +59,7 @@ Catalog entries are strict and must include:
 - a public source location.
 
 See [`schema/catalog.schema.json`](schema/catalog.schema.json) for the complete
-format. Fabric and NeoForge normally publish different JARs, so schema 2 keeps
+format. Fabric and NeoForge normally publish different JARs, so the current shape keeps
 them under one logical Extension version but verifies and installs only the
 artifact for the current loader. Each loader artifact must describe the same
 identity and compatibility ranges as the manifest embedded in that JAR, and

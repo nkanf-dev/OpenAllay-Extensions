@@ -22,6 +22,26 @@ match the intended value. A failed operation can be undone explicitly as a new
 action in the same active session. Inspect restored, conflicting and uncertain
 results rather than calling the journal a complete world backup.
 
+Operation journals use the latest strict shape only, with no internal version number:
+one initial checkpoint, strictly sequenced atomic intent/outcome delta records per native
+quantum, and one final compact checkpoint.
+Every intent is forced before its writes. Every completed quantum's actual readback is
+forced before the next quantum. Final checkpoint publication precedes removal of
+covered deltas. Missing/corrupt sequences fail; recovery never replays world actions.
+Malformed or obsolete journals fail validation and remain untouched. There is no
+migration reader, automatic deletion or silent fallback.
+
+Generated geometry sends one detached write-region plan per contiguous geometry segment. Bed/door placement, reads and connection repair are explicit segment barriers. Native
+work remains sliced by 256 cells without a total-size cap. Plans use memory proportional
+to their assignments. A plan is a final-image request: duplicate positions use the last
+assignment while preserving the original before-image. Discarded intermediate states
+are never placed and therefore do not cause native hooks or physics. Use separate public
+operations when ordered intermediate world effects are required. Structure capture uses batched region reads and preserves full
+block states and per-cell typed block-entity data. Undo batches both initial comparison
+and apply-time comparison; external edits at either point are conflicts, not restoration
+targets. Source evidence groups write/readback progress per operation, including verified
+partial progress on failure, instead of emitting one source record per block.
+
 JavaScript methods perform synchronous planning and native writes. Native work
 runs on the Minecraft owning thread, in cancellable work quanta. Large work may
 complete partially before cancellation or a world disconnect. The journal and
@@ -37,7 +57,7 @@ readback. It does not retroactively own ordinary physics cascades. Later physics
 or external edits can change a verified postimage and produce an undo conflict.
 
 `create(backend,options)` is for deterministic tests or alternate online
-adapters. The backend contract is JSON context/read/write/writeRegion,
+adapters. The backend contract requires JSON context/read/write/writeRegion/readRegion/scanColumns,
 transformState/updateConnections, status/cancel/close/undo and template storage.
 It is not an offline-save adapter. Pure detached tests demonstrate algorithms,
 not live-server permissions, loaded chunks, visual quality or loader lifecycle.

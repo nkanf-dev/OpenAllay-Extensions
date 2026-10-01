@@ -17,7 +17,7 @@ class TemplateStoreTest {
 
     static JsonObject template() {
         return StrictJson.parse("""
-                {"format":"openallay:structure","version":1,"size":[2,3,4],
+                {"format":"openallay:structure","size":[2,3,4],
                  "palette":[{"id":"example:storage","properties":{"facing":"west","waterlogged":"false"}},
                             {"id":"minecraft:air","properties":{}}],
                  "blocks":[{"pos":[1,2,3],"state":0,"blockEntity":"{Items:[{Slot:0b,id:'minecraft:diamond',count:2}],CustomName:'箱'}"},
@@ -70,15 +70,15 @@ class TemplateStoreTest {
         assertThrows(IOException.class, () -> new TemplateStore(link));
     }
 
-    @Test void rejectsCorruptionDuplicateKeysTrailingContentAndFutureSchema() throws Exception {
+    @Test void rejectsCorruptionDuplicateKeysTrailingContentAndUnknownFields() throws Exception {
         TemplateStore store = new TemplateStore(directory);
         for (String text : List.of("{", "{} garbage", "{\"format\":\"a\",\"format\":\"b\"}",
-                "{\"version\":NaN}", "{\"version\":1,}")) {
+                "{\"value\":NaN}", "{\"value\":1,}")) {
             Files.writeString(directory.resolve("bad.json"), text);
             assertThrows(IOException.class, () -> store.load("bad"), text);
         }
         JsonObject future = template();
-        future.addProperty("version", 2);
+        future.addProperty("unknownField", 2);
         Files.writeString(directory.resolve("bad.json"), future.toString());
         assertThrows(IOException.class, () -> store.load("bad"));
         assertThrows(IOException.class, store::list);
@@ -87,7 +87,7 @@ class TemplateStoreTest {
 
     @Test void validatesSchemaTypesFieldsBoundsPaletteAndAirPolicy() throws Exception {
         TemplateStore store = new TemplateStore(directory);
-        for (String field : List.of("format", "version", "size", "palette", "blocks", "metadata", "includesAir",
+        for (String field : List.of("format", "size", "palette", "blocks", "metadata", "includesAir",
                 "gameVersion", "dataVersion")) {
             JsonObject value = template();
             value.remove(field);
@@ -95,7 +95,7 @@ class TemplateStoreTest {
         }
         JsonObject unknown = template(); unknown.addProperty("extra", true);
         assertThrows(IllegalArgumentException.class, () -> store.save("bad", unknown));
-        JsonObject fractional = template(); fractional.addProperty("version", 1.5);
+        JsonObject fractional = template(); fractional.addProperty("dataVersion", 1.5);
         assertThrows(IllegalArgumentException.class, () -> store.save("bad", fractional));
         JsonObject numericString = template(); numericString.addProperty("dataVersion", "5000");
         assertThrows(IllegalArgumentException.class, () -> store.save("bad", numericString));

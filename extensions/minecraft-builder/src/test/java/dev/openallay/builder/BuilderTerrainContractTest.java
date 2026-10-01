@@ -29,6 +29,168 @@ final class BuilderTerrainContractTest {
 
     private static JsonObject run(String code) { return BuilderJsFixture.evaluate(WORLD + code); }
 
+    private static final String SCAN_CASES = """
+            fixtureContext.minY=-180;fixtureContext.maxY=513;
+            // Unseeded cells in this scan fixture are observed air, unlike the unknown-read tests.
+            backend.read=function(x,y,z){var value=cells[key(x,y,z)];return JSON.stringify(value===undefined?{id:'minecraft:air',properties:{}}:value);};
+            for(var x=0;x<=12;x++)seed(x,-150,0,{id:'minecraft:stone',properties:{}});
+            seed(0,500,0,{id:'minecraft:chest',properties:{facing:'west'},blockEntity:'{Items:[]}'});
+            seed(1,480,0,{id:'minecraft:water',properties:{level:'0'}});
+            seed(2,470,0,{id:'minecraft:oak_leaves',properties:{persistent:'false'}});
+            seed(3,460,0,{id:'minecraft:oak_leaves',properties:{persistent:'true'}});
+            seed(4,450,0,{id:'minecraft:oak_log',properties:{axis:'y'}});
+            seed(5,440,0,{id:'minecraft:stripped_oak_log',properties:{axis:'x'}});
+            seed(6,430,0,{id:'custom:soil',properties:{variant:'damp'}});
+            seed(7,420,0,{id:'custom:leaves',properties:{persistent:'false'}});
+            seed(8,410,0,{id:'custom:air',properties:{}});
+            seed(9,400,0,{id:'minecraft:stone',properties:{waterlogged:'true'}});
+            seed(10,390,0,{id:'minecraft:fern',properties:{}});
+            seed(11,-150,0,{id:'minecraft:air',properties:{}});
+            seed(12,513,0,{id:'custom:soil',properties:{variant:'above-window'}});
+            var scanOptions={groundBlocks:['custom:soil','custom:leaves','custom:air','oak_leaves','oak_log','stripped_oak_log','fern','water','air']};
+            function scans(api){return [api.scan_terrain(12,0,0,0),api.scan_ground(0,0,12,0,scanOptions),
+                api.scan_ground(0,0,12,0,{minY:-160,maxY:430,groundBlocks:scanOptions.groundBlocks})];}
+            """;
+
+    private static JsonArray nativeScans(JsonObject fixture,JsonArray requests) {
+        JsonObject cells=fixture.getAsJsonObject("cells");
+        BuilderSessionTest.Backend backend=new BuilderSessionTest.Backend(java.nio.file.Path.of("unused")) {
+            @Override public String read(net.minecraft.core.BlockPos pos) {
+                JsonElement value=cells.get(pos.getX()+","+pos.getY()+","+pos.getZ());
+                if(value==null)return BuilderSessionTest.AIR;
+                if(!value.isJsonObject() || value.getAsJsonObject().has("unknown") || value.getAsJsonObject().has("loaded"))
+                    throw new BuilderException("unobserved_block","fixture unknown");
+                return value.toString();
+            }
+        };
+        JsonArray results=new JsonArray();
+        for(JsonElement request:requests) {
+            TerrainScan.Cursor cursor=new TerrainScan.Cursor(TerrainScan.Request.parse(request.toString()));
+            JsonArray columns=new JsonArray();
+            while(!cursor.done())for(TerrainScan.Column column:cursor.capture(backend,256).columns())columns.add(column.json());
+            results.add(columns);
+        }
+        return results;
+    }
+
+    @Test void batchedNativePredicatesExactlyMatchShippedLegacyJsForEntireDimensionCustomGroundAndRanges() {
+        JsonObject baseline=BuilderJsFixture.evaluateLegacyTerrain(SCAN_CASES+"return {columns:scans(builder),cells:cells};");
+        JsonObject transport=BuilderJsFixture.evaluateBatched(SCAN_CASES+"return {columns:scans(batchedBuilder),requests:scanRequests};",baseline.get("columns"));
+        JsonArray actual=nativeScans(baseline,transport.getAsJsonArray("requests"));
+        assertEquals(baseline.get("columns"),actual);
+        JsonObject replay=BuilderJsFixture.evaluateBatched(SCAN_CASES+"return {columns:scans(batchedBuilder),writes:writes.length};",actual);
+        assertEquals(baseline.get("columns"),replay.get("columns"));
+        assertEquals(0,replay.get("writes").getAsInt());
+        assertEquals("minecraft:chest",actual.get(0).getAsJsonArray().get(0).getAsJsonObject().get("block").getAsString());
+        assertTrue(actual.get(1).getAsJsonArray().get(11).getAsJsonObject().get("y").isJsonNull());
+    }
+
+    @Test void batchedScanFacadeUsesOneDetachedCommandForAll2401ColumnsAndNeverCallsIndividualReads() {
+        JsonArray replies=new JsonArray();
+        JsonObject result=BuilderJsFixture.evaluateBatched("""
+                var reply=[];
+                for(var x=-24;x<=24;x++)for(var z=-24;z<=24;z++)
+                    reply.push({x:x,z:z,y:64,block:'minecraft:stone',properties:{}});
+                scanReplies.push(reply);
+                backend.read=function(){throw new Error('per-cell owner call is forbidden');};
+                var columns=batchedBuilder.scan_ground(24,24,-24,-24);
+                return {count:columns.length,first:columns[0],last:columns[2400],requests:scanRequests,writes:writes.length};
+                """,replies);
+        assertEquals(2401,result.get("count").getAsInt());
+        assertEquals(1,result.getAsJsonArray("requests").size());
+        JsonObject command=result.getAsJsonArray("requests").get(0).getAsJsonObject();
+        assertEquals(-24,command.get("minX").getAsInt());assertEquals(-24,command.get("minZ").getAsInt());
+        assertEquals(24,command.get("maxX").getAsInt());assertEquals(24,command.get("maxZ").getAsInt());
+        assertEquals(-64,command.get("minY").getAsInt());assertEquals(320,command.get("maxY").getAsInt());
+        assertEquals(24,result.getAsJsonObject("last").get("x").getAsInt());
+        assertEquals(24,result.getAsJsonObject("last").get("z").getAsInt());
+        assertEquals(0,result.get("writes").getAsInt());
+    }
+
+    @Test void invalidBatchedScanOptionsAndUnknownNativeCellsNeverReturnFabricatedMissingColumns() {
+        JsonArray replies=new JsonArray();replies.add(new JsonArray());
+        JsonObject invalid=BuilderJsFixture.evaluateBatched("""
+                var failures=[];
+                [function(){batchedBuilder.scan_ground(0,0,0,0,{minY:-65});},
+                 function(){batchedBuilder.scan_ground(0,0,0,0,{maxY:321});},
+                 function(){batchedBuilder.scan_ground(0,0,0,0,{groundBlocks:'custom:soil'});}].forEach(function(f){
+                    try{f();failures.push(false);}catch(e){failures.push(true);}
+                });
+                return {failures:failures,requests:scanRequests.length,writes:writes.length};
+                """,replies);
+        for(JsonElement failure:invalid.getAsJsonArray("failures"))assertTrue(failure.getAsBoolean());
+        assertEquals(0,invalid.get("requests").getAsInt());assertEquals(0,invalid.get("writes").getAsInt());
+        JsonObject baseline=BuilderJsFixture.evaluateLegacyTerrain(SCAN_CASES+"return {columns:scans(builder),cells:cells};");
+        JsonObject transport=BuilderJsFixture.evaluateBatched(SCAN_CASES+"return {requests:scanRequests,columns:scans(batchedBuilder)};",baseline.get("columns"));
+        baseline.getAsJsonObject("cells").add("0,512,0",com.google.gson.JsonNull.INSTANCE);
+        assertThrows(BuilderException.class,()->nativeScans(baseline,transport.getAsJsonArray("requests")));
+    }
+
+    @Test void detachedFixtureBatchSeamsObserveChangedCellsAndPropertiesOnEveryLoopIteration() {
+        JsonObject result=BuilderJsFixture.evaluate("""
+                fixtureContext.minY=-3;fixtureContext.maxY=4;
+                for(var y=-3;y<4;y++)seed(0,y,0,{id:y<=0?'minecraft:stone':'minecraft:air',properties:{}});
+                seed(0,2,0,{id:'minecraft:water',properties:{level:'0'}});
+                var request={minX:0,minZ:0,maxX:0,maxZ:0,minY:-3,maxY:4,groundOnly:false,ground:['minecraft:stone'],vegetation:[]};
+                var terrain=JSON.parse(backend.scanColumns(JSON.stringify(request)));
+                request.groundOnly=true;var ground=JSON.parse(backend.scanColumns(JSON.stringify(request)));
+                var region=JSON.parse(backend.readRegion(JSON.stringify({minX:0,minZ:0,maxX:0,maxZ:0,minY:-3,maxY:3})));
+                return {terrain:terrain,ground:ground,region:region};
+                """);
+        assertEquals(2,result.getAsJsonArray("terrain").get(0).getAsJsonObject().get("y").getAsInt());
+        assertEquals(0,result.getAsJsonArray("ground").get(0).getAsJsonObject().get("y").getAsInt());
+        assertEquals("minecraft:stone",result.getAsJsonArray("region").get(3).getAsJsonObject().getAsJsonObject("state").get("id").getAsString());
+        assertEquals("minecraft:water",result.getAsJsonArray("region").get(5).getAsJsonObject().getAsJsonObject("state").get("id").getAsString());
+    }
+
+    @Test void flattenClearAndPathUseDetachedColumnBatchesWithoutAnyPerVoxelFacadeCalls() {
+        JsonObject r=BuilderJsFixture.evaluate("""
+                var regionsRead=0,scalarReads=0,scans=0;
+                backend.read=function(){scalarReads++;throw new Error('per-voxel facade forbidden');};
+                backend.readRegion=function(json){
+                    regionsRead++;var b=JSON.parse(String(json)),values=[];
+                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)
+                        values.push({x:x,y:y,z:z,state:{id:y<=64?'minecraft:stone':'minecraft:air',properties:{}}});
+                    return JSON.stringify(values);
+                };
+                backend.scanColumns=function(json){scans++;var b=JSON.parse(String(json)),columns=[];
+                    for(var x=b.minX;x<=b.maxX;x++)for(var z=b.minZ;z<=b.maxZ;z++)columns.push({x:x,z:z,y:64,block:'minecraft:stone',properties:{}});
+                    return JSON.stringify(columns);
+                };
+                // Native expectedBefore checks are covered at the Java seam; this test counts facade transports.
+                backend.writeRegion=function(json){var edits=JSON.parse(String(json));regions.push(edits);return JSON.stringify({verified:edits.length});};
+                builder.flatten_area(-24,-24,24,24,64,{depth:0});
+                var flattened={regionReads:regionsRead,writePlans:regions.length,assignments:regions[0].length};
+                regionsRead=0;regions.length=0;
+                builder.clear_vegetation(-24,65,-24,24,319,24);
+                var cleared={regionReads:regionsRead,writePlans:regions.length,assignments:regions.length?regions[0].length:0};
+                regionsRead=0;regions.length=0;
+                var path=builder.build_path({x:-24,z:0},{x:24,z:0});
+                return {flattened:flattened,cleared:cleared,path:path,pathReads:regionsRead,pathScans:scans,scalarReads:scalarReads};
+                """);
+        assertEquals(0,r.get("scalarReads").getAsInt());
+        assertEquals(2401,r.getAsJsonObject("flattened").get("regionReads").getAsInt());
+        assertEquals(1,r.getAsJsonObject("flattened").get("writePlans").getAsInt());
+        assertEquals(2401,r.getAsJsonObject("flattened").get("assignments").getAsInt());
+        assertEquals(2401,r.getAsJsonObject("cleared").get("regionReads").getAsInt());
+        assertEquals(0,r.getAsJsonObject("cleared").get("assignments").getAsInt());
+        assertEquals("built",r.getAsJsonObject("path").get("status").getAsString());
+        assertEquals(49,r.get("pathReads").getAsInt());assertEquals(49,r.get("pathScans").getAsInt());
+    }
+
+    @Test void derivedVegetationAndPathEditsCarryObservedImagesAndRejectChangeBeforeNativePreflight() {
+        JsonObject r=run("""
+                fill(0,0,0,0,0);seed(0,1,0,{id:'minecraft:fern',properties:{}});
+                var original=backend.writeRegion;
+                backend.writeRegion=function(json){seed(0,1,0,{id:'minecraft:chest',properties:{facing:'north'},blockEntity:'{Items:[]}'});return original(json);};
+                var error='';try{builder.clear_vegetation(0,1,0,0,1,0);}catch(e){error=String(e);}
+                return {error:error,writes:writes.length,current:cells[key(0,1,0)]};
+                """);
+        assertTrue(r.get("error").getAsString().contains("concurrent_edit"));assertEquals(0,r.get("writes").getAsInt());
+        assertEquals("minecraft:chest",r.getAsJsonObject("current").get("id").getAsString());
+        assertEquals("{Items:[]}",r.getAsJsonObject("current").get("blockEntity").getAsString());
+    }
+
     @Test
     void scansUseEntireNativeHeightAndSeparateGroundTreesBuildingsLiquidsAndMissingColumns() {
         JsonObject r=run("""

@@ -2,9 +2,6 @@
 'use strict';
 
 exports.install = function (api, util) {
-    if (typeof util.readRegion !== 'function' || typeof util.scanColumns !== 'function' || typeof util.observedEdits !== 'function') {
-        throw new Error('Terrain requires detached native region, column scan and observed edit batches');
-    }
     var own = Object.prototype.hasOwnProperty;
     var air = {'minecraft:air': true, 'minecraft:cave_air': true, 'minecraft:void_air': true};
     var vegetation = {};
@@ -74,63 +71,49 @@ exports.install = function (api, util) {
         if (lo < c.minY || hi > c.maxY || lo >= hi) { throw new Error('Scan height must be inside the world height; maxY is exclusive'); }
         return {minY: lo, maxY: hi};
     }
-    function groundIds(opts) {
+    function groundSet(opts) {
         var extra = {}, list = opts.groundBlocks, n;
         if (list !== undefined) {
             if (!Array.isArray(list)) { throw new Error('groundBlocks must be an array of block IDs'); }
             for (n = 0; n < list.length; n++) { extra[qualified(list[n])] = true; }
         }
-        return Object.keys(natural).concat(Object.keys(extra));
-    }
-    function groundSet(opts) {
-        var accepted = {}, list = groundIds(opts), n;
-        for (n = 0; n < list.length; n++) { accepted[list[n]] = true; }
         return function (block) {
-            return !isAir(block) && !isLiquid(block) && !isVegetation(block) && accepted[block.id] === true;
+            return !isAir(block) && !isLiquid(block) && !isVegetation(block) &&
+                (natural[block.id] === true || extra[block.id] === true);
         };
     }
     function reader(c) {
         var cache = Object.create(null);
-        function observed(block, key) {
-            if (!block || block.unknown || block.loaded === false || typeof block.id !== 'string' || !block.id.length) {
+        return function (x, y, z) {
+            if (y < c.minY || y >= c.maxY) { throw new Error('Read outside world height at ' + x + ',' + y + ',' + z); }
+            var key = x + ',' + y + ',' + z, block;
+            if (own.call(cache, key)) { return cache[key]; }
+            block = api.get_block_full(x, y, z);
+            if (!block || typeof block.id !== 'string' || !block.id.length) {
                 throw new Error('Unknown or unloaded block at ' + key);
             }
-            return util.state(block);
-        }
-        function preload(x, z, low, high) {
-            if (low >= high) { return; }
-            var cells = util.readRegion({minX: x, maxX: x, minZ: z, maxZ: z, minY: low, maxY: high - 1});
-            if (!Array.isArray(cells) || cells.length !== high - low) { throw new Error('Incomplete native column at ' + x + ',' + z); }
-            var n, cell, key;
-            for (n = 0; n < cells.length; n++) {
-                cell = cells[n]; key = x + ',' + (low + n) + ',' + z;
-                if (!cell || cell.x !== x || cell.z !== z || cell.y !== low + n) { throw new Error('Incomplete native column at ' + key); }
-                if (!own.call(cache,key)) { cache[key] = observed(cell.state,key); }
-            }
-        }
-        function read(x, y, z) {
-            if (y < c.minY || y >= c.maxY) { throw new Error('Read outside world height at ' + x + ',' + y + ',' + z); }
-            var key = x + ',' + y + ',' + z;
-            if (own.call(cache,key)) { return cache[key]; }
-            // Demand one observed cell through the batch contract when no caller preloaded
-            // its exact surface/clearance range. Public terrain callers preload columns.
-            preload(x,z,y,y+1);
-            return cache[key];
-        }
-        read.preload = preload;
-        read.release = function () { cache = Object.create(null); };
-        return read;
+            if (!block.properties) { block = {id: block.id, properties: {}}; }
+            cache[key] = block;
+            return block;
+        };
     }
-    function column(x, z, range, read, accept, opts) {
-        return util.scanColumns({minX: x, minZ: z, maxX: x, maxZ: z, minY: range.minY, maxY: range.maxY,
-            groundOnly: true, ground: groundIds(opts || {}), vegetation: Object.keys(vegetation)})[0];
+    function column(x, z, range, read, accept) {
+        var y, block;
+        for (y = range.maxY - 1; y >= range.minY; y--) {
+            block = read(x, y, z);
+            if (accept(block)) { return {x: x, z: z, y: y, block: block.id, properties: block.properties}; }
+        }
+        return {x: x, z: z, y: null, block: null, properties: null};
     }
     function scan(x1, z1, x2, z2, opts, groundOnly) {
         opts = util.options(opts);
         var b = rect(x1, z1, x2, z2), c = context(), range = heightRange(opts, c);
-        return util.scanColumns({minX: b.x1, minZ: b.z1, maxX: b.x2, maxZ: b.z2,
-            minY: range.minY, maxY: range.maxY, groundOnly: groundOnly,
-            ground: groundOnly ? groundIds(opts) : [], vegetation: Object.keys(vegetation)});
+        var read = reader(c), accept = groundOnly ? groundSet(opts) : function (block) { return !isAir(block); };
+        var result = [], x, z;
+        for (x = b.x1; x <= b.x2; x++) {
+            for (z = b.z1; z <= b.z2; z++) { result.push(column(x, z, range, read, accept)); }
+        }
+        return result;
     }
     api.scan_terrain = function (x1, z1, x2, z2, opts) { return scan(x1, z1, x2, z2, opts, false); };
     api.scan_ground = function (x1, z1, x2, z2, opts) { return scan(x1, z1, x2, z2, opts, true); };
@@ -159,12 +142,15 @@ exports.install = function (api, util) {
         return {
             add: function (x, y, z, state) {
                 var key = x + ',' + y + ',' + z;
-                var before = read(x, y, z); // Complete all observed-cell validation before any write.
-                if (!own.call(seen, key)) { seen[key] = edits.length; edits.push({x: x, y: y, z: z, state: state, expectedBefore: before}); }
+                read(x, y, z); // Complete all observed-cell validation before any write.
+                if (!own.call(seen, key)) { seen[key] = edits.length; edits.push({x: x, y: y, z: z, state: state}); }
                 else { edits[seen[key]].state = state; }
             },
             apply: function () {
-                if (edits.length) { util.observedEdits(edits); }
+                var n, e;
+                for (n = 0; n < edits.length; n++) {
+                    e = edits[n]; api.place_block(e.x, e.y, e.z, e.state);
+                }
             }
         };
     }
@@ -190,13 +176,12 @@ exports.install = function (api, util) {
                 distance = Math.max(b.x1 - x, x - b.x2, b.z1 - z, z - b.z2, 0);
                 desired = targetY;
                 if (distance > 0) {
-                    existing = column(x, z, range, read, accept, opts);
+                    existing = column(x, z, range, read, accept);
                     if (existing.y === null) { continue; }
                     exact = existing.y + (targetY - existing.y) * (1 - distance / (radius + 1));
                     low = Math.floor(exact);
                     desired = low + (rand() < exact - low ? 1 : 0);
                 }
-                read.preload(x,z,Math.max(c.minY,desired-depth),clear === true ? c.maxY : Math.min(c.maxY,desired+1+(clear || 0)));
                 for (y = Math.max(c.minY, desired - depth); y < desired; y++) { edits.add(x, y, z, underground); }
                 edits.add(x, desired, z, surface);
                 if (clear) {
@@ -205,7 +190,6 @@ exports.install = function (api, util) {
                     }
                 }
                 changed++;
-                read.release(); // Planned edits retain their own before-image; don't retain a whole ceiling volume.
             }
         }
         edits.apply();
@@ -223,12 +207,10 @@ exports.install = function (api, util) {
         var read = reader(c), edits = writer(read), empty = normalizedState('minecraft:air'), x, y, z, block;
         for (x = b.x1; x <= b.x2; x++) {
             for (z = b.z1; z <= b.z2; z++) {
-                read.preload(x,z,low,high+1);
                 for (y = low; y <= high; y++) {
                     block = read(x, y, z);
                     if (!isAir(block) && (mode === 'all' || isVegetation(block))) { edits.add(x, y, z, empty); }
                 }
-                read.release();
             }
         }
         edits.apply();
@@ -272,7 +254,7 @@ exports.install = function (api, util) {
         function groundColumn(x, z) {
             var key = x + ',' + z;
             if (!own.call(columns, key)) {
-                columns[key] = fixed === null ? column(x, z, range, read, ground, opts) : {x: x, z: z, y: fixed};
+                columns[key] = fixed === null ? column(x, z, range, read, ground) : {x: x, z: z, y: fixed};
             }
             return columns[key];
         }
@@ -287,7 +269,6 @@ exports.install = function (api, util) {
                 for (dz = lower; dz <= upper; dz++) {
                     col = groundColumn(x + dx, z + dz);
                     if (col.y === null || col.y + clearance >= c.maxY) { return null; }
-                    read.preload(col.x,col.z,col.y,col.y+clearance+1);
                     cell = read(col.x, col.y, col.z);
                     if (isLiquid(cell) || (fixed === null && !ground(cell))) { return null; }
                     for (y = col.y + 1; y <= col.y + clearance; y++) {

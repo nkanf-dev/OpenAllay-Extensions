@@ -31,6 +31,7 @@ final class NativeBinding implements BuilderBackend {
     private OwnerThreadBridge bridge;
     private OwnerThreadBridge.Owner clientOwner;
     private OwnerThreadBridge.Owner serverOwner;
+    private Boolean terrainHeightmapSafe;
 
     private NativeBinding(Minecraft client, ToolInvocationContext invocation) {
         if (!client.isSameThread()) throw new BuilderException("wrong_owner", "Capture requires the client owner thread");
@@ -115,6 +116,36 @@ final class NativeBinding implements BuilderBackend {
     }
 
     @Override public String read(BlockPos pos) { validatePosition(pos); return NativeBlockCodec.read(level,pos); }
+    @Override public dev.openallay.builder.storage.BlockSpec terrainState(BlockPos pos) {
+        validatePosition(pos);
+        return NativeBlockCodec.terrainState(level,pos);
+    }
+    @Override public int terrainTop(int x,int z,int minY,int maxY) {
+        BlockPos bottom = new BlockPos(x,minY,z);
+        validatePosition(bottom);
+        validatePosition(new BlockPos(x,maxY-1,z));
+        if (terrainHeightmapSafe == null) {
+            terrainHeightmapSafe = true;
+            // WORLD_SURFACE tests native isAir, while terrain.js excludes only three IDs.
+            // Inspect every possible state once per binding, not every column/default state.
+            for (var block : net.minecraft.core.registries.BuiltInRegistries.BLOCK) {
+                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+                if (!heightmapCovers(block,id)) { terrainHeightmapSafe = false; break; }
+            }
+        }
+        if (!terrainHeightmapSafe) return maxY-1;
+        var chunk = level.getChunkAt(bottom); // Already validated loaded; no implicit generation.
+        var type = net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE;
+        // Never prime a missing map by scanning a whole chunk inside this bounded action.
+        if (!chunk.hasPrimedHeightmap(type)) return maxY-1;
+        return Math.min(maxY-1,chunk.getHeight(type,x & 15,z & 15));
+    }
+    static boolean heightmapCovers(net.minecraft.world.level.block.Block block,String id) {
+        for (var state : block.getStateDefinition().getPossibleStates()) {
+            if (state.isAir() && !TerrainScan.AIR.contains(id)) return false;
+        }
+        return true;
+    }
     @Override public String preview(BlockPos pos,String state) { validatePosition(pos); return NativeBlockCodec.preview(level,pos,state); }
     @Override public WriteOutcome write(BlockPos pos,String state) {
         validatePosition(pos);

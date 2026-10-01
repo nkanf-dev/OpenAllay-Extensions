@@ -65,6 +65,24 @@ those objects. It reports ground below water/buildings; a later path clearance
 check determines whether that ground is usable. Caves do not change the highest
 accepted ground choice. Scans do not copy block entities.
 
+The native backend evaluates the same detached ID/property predicate in cooperative
+owner-thread batches. It does not call JavaScript on a game thread or queue one owner
+round trip per block. A primed WORLD_SURFACE map is only a conservative upper bound
+for skipping known vanilla air. It never replaces the ground predicate. Custom
+native-air IDs or an unprimed map keep the full-height fallback, so modded blocks do
+not silently disappear. The `create(backend)` contract requires detached region reads, native column scans and
+batch writes; it does not silently fall back to per-voxel owner round trips.
+
+Scans are read-only and do not create block-journal operations. Flattening, vegetation clearing and path planning also capture their needed columns
+through native region batches, rather than one owner round trip per voxel. Conditional
+edits carry their observed full before-image (including block-entity payloads) into native
+preflight; intervening changes fail instead of being adopted as a new overwrite baseline.
+Flatten/clear planning discards each read-only column after deriving its edits, so sparse
+sites do not retain an entire world-ceiling volume of air rows. Reads across batches
+are non-atomic observations of the live world. Cancellation, unloaded chunks or
+missing native blocks fail the call rather than returning partial rows or guessing
+a missing column. Scheduling quanta do not limit the rectangle or scan height.
+
 ```javascript
 const terrain = builder.scan_ground(-8, -8, 8, 8, {
     groundBlocks: ["example:limestone"]

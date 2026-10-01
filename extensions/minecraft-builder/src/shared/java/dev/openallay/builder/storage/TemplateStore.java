@@ -11,10 +11,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Versioned, independent application templates. No world/save files or native objects are used here. */
+/** Independent application templates. No world/save files or native objects are used here. */
 public final class TemplateStore {
     public static final String FORMAT = "openallay:structure";
-    public static final int VERSION = 1;
     private final AtomicJsonFiles files;
 
     public TemplateStore(Path directory) throws IOException {
@@ -44,7 +43,7 @@ public final class TemplateStore {
         }
     }
 
-    /** Lists validated templates by sorted ID. Corrupt/future files are errors, not silently omitted content. */
+    /** Lists validated templates by sorted ID. Malformed files are errors, not silently omitted content. */
     public List<String> list() throws IOException {
         List<String> names = files.names();
         for (String name : names) load(name);
@@ -54,12 +53,10 @@ public final class TemplateStore {
     public static JsonObject validate(JsonObject template) {
         Objects.requireNonNull(template, "template");
         JsonObject copy = template.deepCopy();
-        StrictJson.fields(copy, Set.of("format", "version", "size", "palette", "blocks", "metadata",
+        StrictJson.fields(copy, Set.of("format", "size", "palette", "blocks", "metadata",
                 "includesAir", "gameVersion", "dataVersion"), Set.of());
         if (!FORMAT.equals(StrictJson.string(copy.get("format"), "format")))
             throw StrictJson.invalid("Unsupported template format");
-        if (StrictJson.integer(copy.get("version"), "version") != VERSION)
-            throw StrictJson.invalid("Unsupported template schema version");
         StrictJson.nonBlank(StrictJson.string(copy.get("gameVersion"), "gameVersion"), "gameVersion");
         if (StrictJson.integer(copy.get("dataVersion"), "dataVersion") < 0)
             throw StrictJson.invalid("dataVersion must be nonnegative");

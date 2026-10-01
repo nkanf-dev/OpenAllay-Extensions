@@ -19,6 +19,16 @@ final class NativeBlockCodecTest {
         Bootstrap.bootStrap();
     }
 
+    @Test void worldSurfaceBoundRequiresVanillaIdsForEveryPossibleNativeAirState() {
+        assertTrue(NativeBinding.heightmapCovers(Blocks.AIR,"minecraft:air"));
+        assertTrue(NativeBinding.heightmapCovers(Blocks.CAVE_AIR,"minecraft:cave_air"));
+        assertTrue(NativeBinding.heightmapCovers(Blocks.VOID_AIR,"minecraft:void_air"));
+        assertFalse(NativeBinding.heightmapCovers(Blocks.AIR,"custom:air"));
+        assertFalse(NativeBinding.heightmapCovers(Blocks.CAVE_AIR,"custom:invisible_ground"));
+        assertTrue(NativeBinding.heightmapCovers(Blocks.OAK_STAIRS,"custom:stairs"));
+        assertTrue(Blocks.OAK_STAIRS.getStateDefinition().getPossibleStates().size()>1);
+    }
+
     @Test void registryLookupDoesNotFallBackToAir() {
         assertThrows(IllegalArgumentException.class,
                 () -> NativeBlockCodec.decode("{\"id\":\"minecraft:not_a_registered_block\"}"));
