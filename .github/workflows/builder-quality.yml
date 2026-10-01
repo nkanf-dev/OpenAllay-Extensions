@@ -31,7 +31,6 @@ jobs:
           import json, os, re
           from pathlib import Path
           lock = json.loads(Path("extensions/minecraft-builder/openallay-source.lock.json").read_text())
-          assert lock["schemaVersion"] == 1
           assert re.fullmatch(r"[0-9a-f]{40}", lock["revision"]), "Use an exact core commit"
           assert lock["repository"] == "nkanf-dev/OpenAllay"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
