@@ -10,7 +10,10 @@ dependencies {
 }
 configurations.testCompileClasspath.extendsFrom(configurations.compileClasspath)
 configurations.testRuntimeClasspath.extendsFrom(configurations.compileClasspath)
-tasks.withType(Test).configureEach { useJUnitPlatform() }
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging { exceptionFormat = 'full' }
+}
 
 sourceSets.test.java.srcDir rootProject.file('src/test/java')
 sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
