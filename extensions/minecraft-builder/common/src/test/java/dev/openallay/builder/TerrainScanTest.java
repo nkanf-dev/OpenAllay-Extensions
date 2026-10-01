@@ -75,9 +75,9 @@ final class TerrainScanTest {
         }
         long legacyReads=2401L*(320-64);
         assertEquals(legacyReads,source.readCount,"Full-height fallback must still inspect all cells down to ground");
-        assertEquals((legacyReads+2401+255)/256,source.calls,"Only cooperative owner slices, never one call per cell");
+        assertEquals((legacyReads+2401+BuilderSession.QUANTUM-1)/BuilderSession.QUANTUM,source.calls,"Only cooperative owner slices, never one call per cell");
         assertTrue(source.calls*200L<legacyReads);
-        assertTrue(source.maxSliceReads<=256);
+        assertTrue(source.maxSliceReads<=BuilderSession.QUANTUM);
         assertEquals(0,source.writeCount);
         session.finish();
         assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
@@ -105,14 +105,14 @@ final class TerrainScanTest {
         assertEquals(2,source.calls);
     }
 
-    @Test void heightmap49By49RequiresOnlyNineteenOwnerSlicesAndNoTruncatedRows() {
+    @Test void heightmap49By49RequiresOneOwnerSliceAndNoTruncatedRows() {
         Backend source=new Backend(directory); source.top=64;
         BuilderSession session=session(source,new BuilderSessionTest.Invocation());
         JsonArray columns=JsonParser.parseString(session.scanColumns(command(-24,-24,24,24,-64,320,true))).getAsJsonArray();
         assertEquals(2401,columns.size());
         assertEquals(2401,source.readCount);
         assertEquals(2401,source.topQueries);
-        assertEquals(19,source.calls);
+        assertEquals(1,source.calls);
         assertEquals(24,columns.get(2400).getAsJsonObject().get("x").getAsInt());
         assertEquals(24,columns.get(2400).getAsJsonObject().get("z").getAsInt());
     }
@@ -139,7 +139,7 @@ final class TerrainScanTest {
         BuilderException failure=assertThrows(BuilderException.class,()->session.scanColumns(command(0,0,24,24,-64,320,true)));
         assertEquals("cancelled",failure.code());
         assertEquals(1,source.calls);
-        assertTrue(source.readCount<=256);
+        assertTrue(source.readCount<=BuilderSession.QUANTUM);
         assertEquals(0,source.writeCount);
         assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
     }

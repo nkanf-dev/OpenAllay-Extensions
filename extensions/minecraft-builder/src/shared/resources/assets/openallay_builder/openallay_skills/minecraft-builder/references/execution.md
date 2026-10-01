@@ -49,15 +49,21 @@ native status preserve that distinction. Dimension changes invalidate stale
 sessions. Linked blocks and template batches validate their inputs before
 application; world mutation failure can still leave a reported partial result.
 
-`update_connections` uses native shape, neighbor and comparator rules rather
-than a guessed list of solid materials. It includes boundary neighbors. Run it
-after related geometry exists; this avoids updating an incomplete door, bed or
-support stack. The journal owns explicit block/shape writes with immediate
-readback. It does not retroactively own ordinary physics cascades. Later physics
-or external edits can change a verified postimage and produce an undo conflict.
+`update_connections` normalizes native connection shapes in the bounds and
+one-block halo after related geometry exists. Changed states use normal native
+writes, durable intents and verified readback. It does not notify every air or
+interior cell. `sync_physics` is the explicit full-region neighbor and comparator
+notification pass, including halo capture, comparison and readback. Both calls
+flush pending JS writes before their native work.
+
+This changes the earlier behavior: `update_connections` previously also ran that
+full physics pass. Call `sync_physics` explicitly when those whole-region effects
+are required. Presets now finish with shape normalization only. The journal owns
+explicit block/shape writes, not ordinary physics cascades. Later physics or
+external edits can change a verified postimage and produce an undo conflict.
 
 `create(backend,options)` is for deterministic tests or alternate online
-adapters. The backend contract requires JSON context/read/write/writeRegion/readRegion/scanColumns,
-transformState/updateConnections, status/cancel/close/undo and template storage.
+adapters. The backend contract requires JSON context/read/readPositions/write/writeRegion/readRegion/scanColumns/probeColumns,
+transformState/updateConnections/syncPhysics, status/cancel/close/undo and template storage.
 It is not an offline-save adapter. Pure detached tests demonstrate algorithms,
 not live-server permissions, loaded chunks, visual quality or loader lifecycle.

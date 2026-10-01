@@ -38,7 +38,7 @@ var BUILDING=qualifiedList("acacia_leaves acacia_log acacia_planks acacia_stairs
 exports.BLOCK_ALIASES=clone(ALIASES);exports.FLOWERS=FLOWERS.slice();exports.POTTED_FLOWERS=POTTED.slice();exports.NATURAL_GROUND=GROUND.slice();exports.BUILDING_BLOCKS=BUILDING.slice();exports._fix_block_name=qualify;
 exports.create=function(backend,settings) {
     settings=options(settings); if(!backend)throw new Error("backend is required");
-    ["context","read","write","writeRegion","readRegion","scanColumns","probeColumns"].forEach(function(name){if(typeof backend[name]!=="function")throw new Error("backend requires "+name);});
+    ["context","read","write","writeRegion","readRegion","scanColumns"].forEach(function(name){if(typeof backend[name]!=="function")throw new Error("backend requires "+name);});
     var api={},written=0,random=rng(settings.seed),closed=false,heightContext=null,pending=[],batchDepth=0;
     function flush(){if(!pending.length)return;var changes=pending;pending=[];requireMethod("writeRegion").call(backend,JSON.stringify(changes));}
 
@@ -46,8 +46,7 @@ exports.create=function(backend,settings) {
     function context() { var c=decode(requireMethod("context").call(backend)); integer(c.minY,"minY");integer(c.maxY,"maxY");if(c.maxY<=c.minY)throw new Error("invalid world height");return c; }
     function pos(x,y,z) { if(closed)throw new Error("builder session is closed");integer(x,"x");integer(y,"y");integer(z,"z"); var c=heightContext||(heightContext=context()); if(y<c.minY||y>=c.maxY)throw new Error("Y outside current dimension build height"); }
     function summary(label,before) { return {operation:label,writes:written-before}; }
-    // Internal callers own normalized states. Do not JSON-clone one palette entry per voxel.
-    function put(x,y,z,s) { pos(x,y,z);if(batchDepth>0){pending.push({x:x,y:y,z:z,state:s});written++;}else{backend.write(x,y,z,JSON.stringify(s));written++;} }
+    function put(x,y,z,s) { pos(x,y,z);s=state(s);if(batchDepth>0){pending.push({x:x,y:y,z:z,state:s});written++;}else{backend.write(x,y,z,JSON.stringify(s));written++;} }
     function batch(changes) {
         flush();var i;for(i=0;i<changes.length;i++){pos(changes[i].x,changes[i].y,changes[i].z);changes[i].state=state(changes[i].state);}
         var result=decode(backend.writeRegion(JSON.stringify(changes)));written+=changes.length;return result;
@@ -56,39 +55,15 @@ exports.create=function(backend,settings) {
     api.context=context;
     api.get_block_full=function(x,y,z) { flush();pos(x,y,z);var s=decode(backend.read(x,y,z));if(!s||s.unknown||s.loaded===false)throw new Error("block is unobserved at "+[x,y,z]);return state(s); };
     api.get_block=function(x,y,z) { return api.get_block_full(x,y,z).id; };
-    function observedCell(cell,x,y,z) {
-        if(!cell||cell.x!==x||cell.y!==y||cell.z!==z||!cell.state||cell.state.unknown||cell.state.loaded===false)throw new Error("block is unobserved at "+[x,y,z]);
-        return {x:x,y:y,z:z,state:state(cell.state)};
-    }
-    api.read_region=function(x1,y1,z1,x2,y2,z2) {
-        flush();var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2)),cells=decode(backend.readRegion(JSON.stringify(b))),out=[],i=0;
-        var volume=(b.maxX-b.minX+1)*(b.maxY-b.minY+1)*(b.maxZ-b.minZ+1);
-        if(!Array.isArray(cells)||cells.length!==volume)throw new Error("incomplete native region");
-        for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)out.push(observedCell(cells[i++],x,y,z));
-        return out;
-    };
-    api.get_blocks=function(positions) {
-        if(!Array.isArray(positions))throw new Error("get_blocks requires an array of positions");
-        var points=[],i,p;
-        for(i=0;i<positions.length;i++){
-            p=positions[i];if(!p||typeof p!=="object"||Array.isArray(p))throw new Error("position must be {x,y,z}");
-            pos(p.x,p.y,p.z);points.push({x:p.x,y:p.y,z:p.z});
-        }
-        flush();var cells=decode(requireMethod("readPositions").call(backend,JSON.stringify(points))),out=[];
-        if(!Array.isArray(cells)||cells.length!==points.length)throw new Error("incomplete native block batch");
-        for(i=0;i<points.length;i++){p=points[i];out.push(observedCell(cells[i],p.x,p.y,p.z));}
-        return out;
-    };
     api.place_block=function(x,y,z,block,props) { var before=written;put(x,y,z,state(block,props));return summary("place_block",before); };
     api.transform_state=function(block,rotation,mirror) { rotation=rotation===undefined?0:integer(rotation,"rotation");if(rotation%90!==0)throw new Error("rotation must be a multiple of 90");rotation=((rotation%360)+360)%360;mirror=mirror===true?"front_back":(mirror||"none");if(["none","left_right","front_back"].indexOf(mirror)<0)throw new Error("invalid mirror");return state(decode(requireMethod("transformState").call(backend,JSON.stringify(state(block)),rotation,mirror))); };
     api.update_connections=function(x1,y1,z1,x2,y2,z2) { flush();var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2));return decode(requireMethod("updateConnections").call(backend,JSON.stringify(b))); };
-    api.sync_physics=function(x1,y1,z1,x2,y2,z2) { flush();var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2));return decode(requireMethod("syncPhysics").call(backend,JSON.stringify(b))); };
-    api.status=function(){flush();return decode(requireMethod("status").call(backend));};
-    api.cancel=function(){written-=pending.length;pending=[];requireMethod("cancel").call(backend);return api.status();};
-    api.finish=function(){flush();return decode(requireMethod("finish").call(backend));};
-    api.list_operations=function(){flush();return decode(requireMethod("listOperations").call(backend));};
-    api.close=function(){flush();requireMethod("close").call(backend);closed=true;return api.status();};
-    api.undo=function(id){flush();var method=requireMethod("undo");return decode(id===undefined?method.call(backend):method.call(backend,String(id)));};
+    api.status=function(){return decode(requireMethod("status").call(backend));};
+    api.cancel=function(){requireMethod("cancel").call(backend);return api.status();};
+    api.finish=function(){return decode(requireMethod("finish").call(backend));};
+    api.list_operations=function(){return decode(requireMethod("listOperations").call(backend));};
+    api.close=function(){requireMethod("close").call(backend);closed=true;return api.status();};
+    api.undo=function(id){var method=requireMethod("undo");return decode(id===undefined?method.call(backend):method.call(backend,String(id)));};
     api.get_player_pos=function(){return clone(context().player);};api.detect_version=function(){return context().version;};api.save_and_close=api.close;
     api.BLOCK_ALIASES=clone(ALIASES);api.FLOWERS=FLOWERS.slice();api.POTTED_FLOWERS=POTTED.slice();api.NATURAL_GROUND=GROUND.slice();api.BUILDING_BLOCKS=BUILDING.slice();api._fix_block_name=qualify;
     api.build_box=function(x1,y1,z1,x2,y2,z2,block,o) {
@@ -100,13 +75,7 @@ exports.create=function(backend,settings) {
     };
     api.build_walls=function(x1,y1,z1,x2,y2,z2,block,o) {
         o=options(o);var b=checkBounds(bounds(x1,y1,z1,x2,y2,z2)),s=state(block,o.properties),corner=state(o.corner||s),before=written;
-        for(var x=b.minX;x<=b.maxX;x++) {
-            var edgeX=x===b.minX||x===b.maxX;
-            // Preserve x,z,y command order, but never walk the unused interior.
-            for(var z=b.minZ;z<=b.maxZ;z+=(edgeX?1:Math.max(1,b.maxZ-b.minZ))) {
-                for(var y=b.minY;y<=b.maxY;y++)put(x,y,z,(edgeX&&(z===b.minZ||z===b.maxZ))?corner:s);
-            }
-        }
+        for(var x=b.minX;x<=b.maxX;x++)for(var z=b.minZ;z<=b.maxZ;z++)if(x===b.minX||x===b.maxX||z===b.minZ||z===b.maxZ)for(var y=b.minY;y<=b.maxY;y++)put(x,y,z,((x===b.minX||x===b.maxX)&&(z===b.minZ||z===b.maxZ))?corner:s);
         return summary("build_walls",before);
     };
     api.build_floor=function(x1,y,z1,x2,z2,block,alternate) {
@@ -138,9 +107,8 @@ exports.create=function(backend,settings) {
     };
     api.build_pitched_roof=function(x1,y,z1,x2,z2,stair,slab,o) {
         o=options(o);var axis=o.axis||"z";if(axis!=="x"&&axis!=="z")throw new Error("roof axis must be x or z");var over=nonnegative(o.overhang===undefined?0:o.overhang,"overhang"),baseBounds=bounds(x1,y,z1,x2,y,z2),b=bounds(baseBounds.minX-over,y,baseBounds.minZ-over,baseBounds.maxX+over,y,baseBounds.maxZ+over),span=axis==="z"?b.maxX-b.minX+1:b.maxZ-b.minZ+1;
-        checkBounds(bounds(b.minX,y,b.minZ,b.maxX,y+Math.floor((span-1)/2),b.maxZ));var ss=state(stair),before=written;
-        var ridgeState=state(slab,{type:"bottom"}),near=state(ss,{facing:axis==="z"?"east":"south",half:"bottom",shape:"straight"}),far=state(ss,{facing:axis==="z"?"west":"north",half:"bottom",shape:"straight"});
-        for(var x=b.minX;x<=b.maxX;x++)for(var z=b.minZ;z<=b.maxZ;z++) {var i=axis==="z"?x-b.minX:z-b.minZ,dy=Math.min(i,span-1-i),ridge=span%2===1&&i===(span-1)/2;put(x,y+dy,z,ridge?ridgeState:(i<span/2?near:far));}return summary("build_pitched_roof",before);
+        checkBounds(bounds(b.minX,y,b.minZ,b.maxX,y+Math.floor((span-1)/2),b.maxZ));var ss=state(stair),sl=state(slab),before=written;
+        for(var x=b.minX;x<=b.maxX;x++)for(var z=b.minZ;z<=b.maxZ;z++) {var i=axis==="z"?x-b.minX:z-b.minZ,dy=Math.min(i,span-1-i),ridge=span%2===1&&i===(span-1)/2,facing=axis==="z"?(i<span/2?"east":"west"):(i<span/2?"south":"north");put(x,y+dy,z,ridge?state(sl,{type:"bottom"}):state(ss,{facing:facing,half:"bottom",shape:"straight"}));}return summary("build_pitched_roof",before);
     };
 
     function facing(value) { var f=value||"north";if(["north","east","south","west"].indexOf(f)<0)throw new Error("facing must be north, east, south or west");return f; }
@@ -218,43 +186,26 @@ exports.create=function(backend,settings) {
         if(!size)size=[max[0]-min[0]+1,max[1]-min[1]+1,max[2]-min[2]+1];var t={format:"openallay:structure",size:size,includesAir:!!o.includeAir,gameVersion:String(c.gameVersion||c.version),dataVersion:c.dataVersion,palette:[],blocks:[],metadata:{importedLegacy:true,legacy:clone(legacy.meta||legacy.metadata||{})}},indices={};
         for(i=0;i<parsed.length;i++){var q=parsed[i],ss=canonicalState(q.state),k=JSON.stringify(ss),idx=indices[k];if(idx===undefined){idx=t.palette.length;indices[k]=idx;t.palette.push(ss);}var out={pos:[q.pos[0]-min[0],q.pos[1]-min[1],q.pos[2]-min[2]],state:idx};if(q.state.blockEntity!==undefined)out.blockEntity=q.state.blockEntity;t.blocks.push(out);if(isAir(q.state))t.includesAir=true;}return validateTemplate(t);
     };
-    var util={integer:integer,positive:positive,options:options,state:state,put:put,summary:summary,count:function(){return written;},rng:rng,seed:settings.seed===undefined?0:settings.seed};
+    var util={integer:integer,positive:positive,options:options,state:state,summary:summary,count:function(){return written;},rng:rng,seed:settings.seed===undefined?0:settings.seed};
     util.readRegion=function(request){
         if(closed)throw new Error("builder session is closed");
         flush();return decode(backend.readRegion(JSON.stringify(request)));
     };
     util.observedEdits=function(changes){
-        // Terrain owns these already-normalized, detached states and before-images.
-        flush();var i;for(i=0;i<changes.length;i++){pos(changes[i].x,changes[i].y,changes[i].z);}
+        flush();var i;for(i=0;i<changes.length;i++){pos(changes[i].x,changes[i].y,changes[i].z);changes[i].state=state(changes[i].state);changes[i].expectedBefore=state(changes[i].expectedBefore);}
         var result=decode(backend.writeRegion(JSON.stringify(changes)));written+=changes.length;return result;
     };
     util.scanColumns=function(request){
         if(closed)throw new Error("builder session is closed");
         flush();return decode(backend.scanColumns(JSON.stringify(request)));
     };
-    util.probeColumns=function(request){
-        if(closed)throw new Error("builder session is closed");
-        flush();return decode(backend.probeColumns(JSON.stringify(request)));
-    };
     require("openallay_builder:terrain").install(api,util);
     require("openallay_builder:presets").install(api,util);
     // Collect contiguous geometry plans; explicit native reads/linked edits are barriers.
     // Java owns cooperative scheduling. No JS callback enters a game owner thread.
-    function runBatch(method,args) {
-        batchDepth++;var result;
-        try { result=method.apply(api,args); }
-        catch(error) { written-=pending.length;pending=[];throw error; }
-        finally { batchDepth--; }
-        if(batchDepth===0)flush();return result;
-    }
-    api.batch=function(callback) {
-        if(typeof callback!=="function")throw new Error("batch requires a callback");
-        var before=written,result=runBatch(callback,[api]);
-        return result===undefined?summary("batch",before):result;
-    };
     Object.keys(api).forEach(function(name){
         if((name.indexOf("build_")===0||name.indexOf("place_")===0||name==="flatten_area"||name==="clear_vegetation")&&name!=="place_block"){
-            var method=api[name];api[name]=function(){return runBatch(method,arguments);};
+            var method=api[name];api[name]=function(){batchDepth++;var result;try{result=method.apply(api,arguments);}catch(error){written-=pending.length;pending=[];throw error;}finally{batchDepth--;}if(batchDepth===0)flush();return result;};
         }
     });
     return api;

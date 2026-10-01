@@ -118,6 +118,92 @@ class OwnerThreadBridgeTest {
         }
     }
 
+    @Test void chainedGateAndTargetRunOnTheirOwnersWithoutWorkerHop() {
+        AtomicBoolean onGate = new AtomicBoolean(), onTarget = new AtomicBoolean();
+        java.util.List<String> order = new java.util.ArrayList<>();
+        OwnerThreadBridge bridge = new OwnerThreadBridge(() -> {},() -> false);
+        OwnerThreadBridge.Owner gate = new OwnerThreadBridge.Owner(action -> {
+            onGate.set(true); try { action.run(); } finally { onGate.set(false); }
+        },onGate::get,() -> order.add("gate"));
+        OwnerThreadBridge.Owner target = new OwnerThreadBridge.Owner(action -> {
+            assertTrue(onGate.get(),"Target dispatch occurs directly within gate callback");
+            onTarget.set(true); try { action.run(); } finally { onTarget.set(false); }
+        },onTarget::get,() -> order.add("target"));
+        assertEquals("readback",bridge.callAfter(gate,target,() -> { order.add("action"); return "readback"; }));
+        assertEquals(java.util.List.of("gate","target","action"),order);
+        assertEquals(2,bridge.dispatches());
+    }
+
+    @Test void cancellationBeforeQueuedGatePreventsTargetDispatch() throws Exception {
+        CountDownLatch queued = new CountDownLatch(1);
+        AtomicReference<Runnable> gateAction = new AtomicReference<>();
+        AtomicReference<OwnerThreadBridge> reference = new AtomicReference<>();
+        AtomicBoolean gateOwner = new AtomicBoolean(), targetDispatched = new AtomicBoolean();
+        try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            Future<String> result = worker.submit(() -> {
+                OwnerThreadBridge bridge = new OwnerThreadBridge(() -> {},() -> false); reference.set(bridge);
+                return bridge.callAfter(new OwnerThreadBridge.Owner(action -> { gateAction.set(action); queued.countDown(); },gateOwner::get,() -> {}),
+                        new OwnerThreadBridge.Owner(action -> targetDispatched.set(true),() -> false,() -> {}),() -> "bad");
+            });
+            assertTrue(queued.await(2,TimeUnit.SECONDS));
+            reference.get().close();
+            assertThrows(java.util.concurrent.ExecutionException.class,() -> result.get(2,TimeUnit.SECONDS));
+            gateOwner.set(true); gateAction.get().run(); gateOwner.set(false);
+            assertFalse(targetDispatched.get());
+            assertEquals(1,reference.get().dispatches());
+        }
+    }
+
+    @Test void cancellationAfterGateBeforeQueuedTargetNeverStartsMutation() throws Exception {
+        CountDownLatch queued = new CountDownLatch(1);
+        AtomicReference<Runnable> targetAction = new AtomicReference<>();
+        AtomicReference<OwnerThreadBridge> reference = new AtomicReference<>();
+        AtomicBoolean gateOwner = new AtomicBoolean(), targetOwner = new AtomicBoolean(), wrote = new AtomicBoolean();
+        try (ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            Future<String> result = worker.submit(() -> {
+                OwnerThreadBridge bridge = new OwnerThreadBridge(() -> {},() -> false); reference.set(bridge);
+                OwnerThreadBridge.Owner gate = new OwnerThreadBridge.Owner(action -> {
+                    gateOwner.set(true); try { action.run(); } finally { gateOwner.set(false); }
+                },gateOwner::get,() -> {});
+                return bridge.callAfter(gate,new OwnerThreadBridge.Owner(action -> {targetAction.set(action);queued.countDown();},targetOwner::get,() -> {}),
+                        () -> {wrote.set(true);return "bad";});
+            });
+            assertTrue(queued.await(2,TimeUnit.SECONDS));
+            reference.get().close();
+            assertThrows(java.util.concurrent.ExecutionException.class,() -> result.get(2,TimeUnit.SECONDS));
+            targetOwner.set(true); targetAction.get().run(); targetOwner.set(false);
+            assertFalse(wrote.get());
+            assertEquals(2,reference.get().dispatches());
+        }
+    }
+
+    @Test void chainedTargetInterruptWaitsForStartedReadback() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+        AtomicReference<Thread> gateThread = new AtomicReference<>(), targetThread = new AtomicReference<>(), workerThread = new AtomicReference<>();
+        AtomicBoolean interruptRestored = new AtomicBoolean();
+        try (ExecutorService gate = Executors.newSingleThreadExecutor(); ExecutorService target = Executors.newSingleThreadExecutor(); ExecutorService worker = Executors.newSingleThreadExecutor()) {
+            gate.submit(() -> gateThread.set(Thread.currentThread())).get();
+            target.submit(() -> targetThread.set(Thread.currentThread())).get();
+            Future<String> result = worker.submit(() -> {
+                workerThread.set(Thread.currentThread());
+                OwnerThreadBridge bridge = new OwnerThreadBridge(() -> {},() -> Thread.currentThread()==gateThread.get() || Thread.currentThread()==targetThread.get());
+                String value = bridge.callAfter(new OwnerThreadBridge.Owner(gate,() -> Thread.currentThread()==gateThread.get(),() -> {}),
+                        new OwnerThreadBridge.Owner(target,() -> Thread.currentThread()==targetThread.get(),() -> {}),() -> {
+                            entered.countDown();
+                            if(!release.await(2,TimeUnit.SECONDS)) throw new AssertionError("test release timeout");
+                            return "actual-applied-image";
+                        });
+                interruptRestored.set(Thread.currentThread().isInterrupted());
+                return value;
+            });
+            assertTrue(entered.await(2,TimeUnit.SECONDS));
+            workerThread.get().interrupt();
+            assertFalse(result.isDone()); release.countDown();
+            assertEquals("actual-applied-image",result.get(2,TimeUnit.SECONDS));
+            assertTrue(interruptRestored.get());
+        }
+    }
+
     @Test void wrongWorkerCannotBorrowFacade() throws Exception {
         OwnerThreadBridge bridge = new OwnerThreadBridge(() -> {}, () -> false);
         try (ExecutorService foreign = Executors.newSingleThreadExecutor()) {

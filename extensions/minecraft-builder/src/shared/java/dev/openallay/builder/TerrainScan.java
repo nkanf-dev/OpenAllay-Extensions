@@ -94,7 +94,8 @@ final class TerrainScan {
             List<Column> result = new ArrayList<>();
             long reads = 0;
             int work = 0;
-            while (!done() && work < quantum) {
+            long deadline = source.sliceDeadline();
+            while (!done() && work < quantum && (work == 0 || System.nanoTime() < deadline)) {
                 int x = request.x(index), z = request.z(index);
                 if (!started) {
                     // A loaded-column bound only skips proven air, not rejected surface blocks.

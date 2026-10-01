@@ -42,7 +42,7 @@ exports.install = function (api, util) {
         x = util.integer(x, "x"); y = util.integer(y, "y"); z = util.integer(z, "z");
         var facing = pick(o, "facing", "north"), rotation = directions.indexOf(facing);
         if (rotation < 0) { fail("facing must be north, east, south, or west"); }
-        var before = util.count(), bounds = null, world = api.context(), states = Object.create(null);
+        var before = util.count(), bounds = null, world = api.context();
         var minY = util.integer(world.minY, "context.minY"), maxY = util.integer(world.maxY, "context.maxY");
         if (minY >= maxY) { fail("World height is empty"); }
         function point(u, v, w) {
@@ -64,13 +64,11 @@ exports.install = function (api, util) {
             facing: facing,
             point: point,
             state: function (block, properties) {
-                var normalized = util.state(block, properties), key = JSON.stringify(normalized);
-                if (!own.call(states, key)) { states[key] = api.transform_state(normalized, rotation * 90, "none"); }
-                return states[key];
+                return api.transform_state(util.state(block, properties), rotation * 90, "none");
             },
             put: function (u, v, w, state) {
                 var p = point(u, v, w); touch(p);
-                util.put(p.x, p.y, p.z, state);
+                api.place_block(p.x, p.y, p.z, state);
             },
             box: function (u1, v1, w1, u2, v2, w2, state) {
                 var u, v, w;

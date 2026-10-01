@@ -99,7 +99,7 @@ class BuilderSessionTest {
     @Test void nativePhysicsRunsButDoesNotAttributeUnrelatedHaloChangesToUndo() throws Exception {
         Backend backend = new Backend(directory); backend.notifyChanges = true;
         BuilderSession session = session(backend); session.write(0,1,0,STONE);
-        session.updateConnections(BOUNDS);
+        session.syncPhysics(BOUNDS);
         assertEquals(27,backend.notifyCount);
         var observation=invocation.evidence.getLast();
         assertEquals("multi-slice-non-atomic",observation.details().get("openallay_builder:consistency"));
@@ -117,10 +117,10 @@ class BuilderSessionTest {
     }
     @Test void interveningEditBeforeNotifyIsRejectedAndNeverClaimedAsOurPostimage() {
         Backend backend=new Backend(directory);
-        // Shape scan reads27, notify capture reads27, first comparison is read55.
-        backend.raceOnRead=55;
+        // Explicit physics captures 27 cells; the first comparison is read28.
+        backend.raceOnRead=28;
         BuilderSession session=session(backend);
-        BuilderException failure=assertThrows(BuilderException.class,()->session.updateConnections(BOUNDS));
+        BuilderException failure=assertThrows(BuilderException.class,()->session.syncPhysics(BOUNDS));
         assertEquals("concurrent_edit",failure.code());
         assertEquals(0,backend.notifyCount);
         assertEquals(0,backend.writeCount);
@@ -156,7 +156,7 @@ class BuilderSessionTest {
         }
         JsonObject result=JsonParser.parseString(session.writeRegion(changes.toString())).getAsJsonObject();
         assertEquals(2401,result.get("verified").getAsInt());assertEquals(2401,backend.writeCount);
-        assertEquals(20,backend.callCount,"Ten preparation slices and ten apply slices, not per-block dispatch");
+        assertEquals(4,backend.callCount,"One preparation slice and three durable write slices, not per-block dispatch");
         assertEquals(1,invocation.evidence.stream().filter(e->e.sourceId().equals("openallay_builder:write-readback")).count());
         session.finish();
         var original=new OperationJournal(directory.resolve("journals")).list().getFirst();
@@ -165,7 +165,7 @@ class BuilderSessionTest {
         int before=backend.callCount;
         JsonObject undone=JsonParser.parseString(session.undo(original.id())).getAsJsonObject();
         assertEquals(2401,undone.get("restored").getAsInt());assertEquals(0,undone.getAsJsonArray("conflicts").size());
-        assertEquals(20,backend.callCount-before);
+        assertEquals(6,backend.callCount-before,"Three undo preparation slices and three apply slices");
         for(String value:backend.blocks.values())assertEquals(AIR,value);
         var journals=new OperationJournal(directory.resolve("journals")).list();
         var undo=journals.stream().filter(o->!o.id().equals(original.id())).findFirst().orElseThrow();
@@ -194,17 +194,17 @@ class BuilderSessionTest {
         BuilderSession session=session(recording);
         com.google.gson.JsonArray changes=new com.google.gson.JsonArray();
         JsonObject first=new JsonObject();first.addProperty("x",0);first.addProperty("y",1);first.addProperty("z",0);first.add("state",JsonParser.parseString(STONE));changes.add(first);
-        for(int i=1;i<=300;i++) {
+        for(int i=1;i<=BuilderSession.QUANTUM;i++) {
             JsonObject change=new JsonObject();change.addProperty("x",i);change.addProperty("y",1);change.addProperty("z",0);change.add("state",JsonParser.parseString(STONE));changes.add(change);
         }
         JsonObject last=first.deepCopy();last.add("state",JsonParser.parseString(AIR));changes.add(last);
         JsonObject result=JsonParser.parseString(session.writeRegion(changes.toString())).getAsJsonObject();
-        assertEquals(301,result.get("verified").getAsInt());assertEquals(301,recording.writeCount);
+        assertEquals(BuilderSession.QUANTUM+1,result.get("verified").getAsInt());assertEquals(BuilderSession.QUANTUM+1,recording.writeCount);
         assertEquals(List.of(AIR),applied,"Discarded intermediate STONE assignment never invokes native replacement hooks");
         assertEquals(AIR,recording.read(new BlockPos(0,1,0)));
         session.finish();
         var original=new OperationJournal(directory.resolve("journals")).list().getFirst();
-        assertEquals(301,original.entries().size());
+        assertEquals(BuilderSession.QUANTUM+1,original.entries().size());
         var entry=original.entries().getFirst();assertEquals(0,entry.position().x());
         assertEquals(BlockSpec.fromJson(DIRT),entry.before());assertEquals(BlockSpec.fromJson(AIR),entry.intended());assertEquals(BlockSpec.fromJson(AIR),entry.verified());
         session.undo(original.id());assertEquals(DIRT,recording.read(new BlockPos(0,1,0)));
@@ -230,6 +230,150 @@ class BuilderSessionTest {
         var journal=new OperationJournal(directory.resolve("journals")).list().getFirst();
         assertEquals(1,journal.entries().size());assertEquals(BlockSpec.fromJson(DIRT),journal.entries().getFirst().verified());
         assertEquals(1,invocation.evidence.size());assertEquals("1",invocation.evidence.getFirst().details().get("openallay_builder:count"));
+    }
+
+    @Test void sparseRegionOmitsOnlyCanonicalAirAndKeepsExactOrderAndEvidence() {
+        Backend backend = new Backend(directory);
+        String cave = "{\"id\":\"minecraft:cave_air\",\"properties\":{}}";
+        String custom = "{\"id\":\"custom:air\",\"properties\":{\"variant\":\"visible\"}}";
+        String chest = "{\"id\":\"minecraft:chest\",\"properties\":{},\"blockEntity\":\"{Items:[]}\"}";
+        backend.blocks.put(new BlockPos(2,1,0),cave);
+        backend.blocks.put(new BlockPos(0,1,1),custom);
+        backend.blocks.put(new BlockPos(1,2,0),chest);
+        BuilderSession session = session(backend);
+        String bounds = "{\"minX\":0,\"minY\":1,\"minZ\":0,\"maxX\":2,\"maxY\":2,\"maxZ\":1,\"omitAir\":true}";
+        var cells = JsonParser.parseString(session.readRegion(bounds)).getAsJsonArray();
+        assertEquals(3,cells.size());
+        assertEquals(cave,cells.get(0).getAsJsonObject().get("state").toString());
+        assertEquals(custom,cells.get(1).getAsJsonObject().get("state").toString());
+        assertEquals(chest,cells.get(2).getAsJsonObject().get("state").toString());
+        assertEquals(12,backend.readCount,"All omitted voxels were still observed");
+        assertEquals(12,status(session).get("reads").getAsInt());
+        assertEquals("12",invocation.evidence.getLast().details().get("openallay_builder:count"));
+        assertNotNull(invocation.evidence.getLast().details().get("openallay_builder:capture_start"));
+        var dense = JsonParser.parseString(session.readRegion(bounds.replace(",\"omitAir\":true",""))).getAsJsonArray();
+        assertEquals(12,dense.size(),"The public dense contract is unchanged");
+        assertEquals(0,backend.writeCount);
+    }
+
+    @Test void sparseCaptureChecksOmittedAirAndNeverPublishesPartialOrCancelledCoverage() {
+        Backend backend = new Backend(directory) {
+            @Override public String read(BlockPos pos) {
+                if (pos.getX() == 1) throw new BuilderException("chunk_unavailable","unloaded air is not observed air");
+                return super.read(pos);
+            }
+        };
+        BuilderSession session = session(backend);
+        assertThrows(BuilderException.class,() -> session.readRegion("{\"minX\":0,\"minY\":1,\"minZ\":0,\"maxX\":2,\"maxY\":1,\"maxZ\":0,\"omitAir\":true}"));
+        assertTrue(invocation.evidence.isEmpty());
+    }
+
+    @Test void cooperativeWriteYieldKeepsOneIntentPerPositionAndExactUndoImages() throws Exception {
+        Backend backend = new Backend(directory) { @Override public long sliceDeadline() { return 0; } };
+        BuilderSession session = session(backend);
+        session.writeRegion("[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":1,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":2,\"y\":1,\"z\":0,\"state\":"+STONE+"}]");
+        assertEquals(6,backend.callCount,"Each timed slice makes progress without native block count caps");
+        long intents = 0, withdrawals = 0;
+        try (var paths = Files.list(directory.resolve("journals"))) {
+            for (Path path : paths.toList()) {
+                JsonObject record = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+                if (record.has("intents")) intents += record.getAsJsonArray("intents").size();
+                if (record.has("unstarted")) withdrawals += record.getAsJsonArray("unstarted").size();
+            }
+        }
+        assertEquals(3,intents,"Time-budget yield never republishes a durable intent tail");
+        assertEquals(0,withdrawals,"Only actual failures can withdraw known-unstarted tail");
+        session.finish();
+        var original = new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(3,original.entries().size());
+        assertTrue(original.entries().stream().noneMatch(OperationJournal.Entry::pending));
+        session.undo(original.id());
+        assertTrue(backend.blocks.values().stream().allMatch(AIR::equals));
+    }
+
+    @Test void cancellationBetweenTimedApplySlicesAbortsOnlyRemainingUnstartedIntents() throws Exception {
+        Backend backend = new Backend(directory) {
+            @Override public long sliceDeadline() { return 0; }
+            @Override public <T>T call(Callable<T> action) {
+                if (callCount == 4) throw new BuilderException("session_closed","cancelled before next owner slice");
+                return super.call(action);
+            }
+        };
+        BuilderSession session = session(backend);
+        assertThrows(BuilderException.class,() -> session.writeRegion("[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":1,\"y\":1,\"z\":0,\"state\":"+STONE+"},{\"x\":2,\"y\":1,\"z\":0,\"state\":"+STONE+"}]"));
+        var original = new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(1,original.entries().size());
+        assertEquals(BlockSpec.fromJson(STONE),original.entries().getFirst().verified());
+        assertEquals(1,backend.writeCount);
+        assertEquals(AIR,backend.read(new BlockPos(1,1,0)));
+    }
+
+    @Test void connectionPhasesRespectCooperativeSlicesWithoutSkippingHaloPhysics() {
+        Backend backend = new Backend(directory) { @Override public long sliceDeadline() { return 0; } };
+        BuilderSession session = session(backend);
+        session.syncPhysics(BOUNDS);
+        assertEquals(27,backend.notifyCount,"Every explicit requested halo cell still receives native physics");
+        assertEquals(54,backend.callCount,"One capture and one compare/notify/readback slice per cell");
+        assertEquals(0,backend.writeCount);
+    }
+
+    @Test void cooperativeNotificationRecapturesItsOwnPhysicsChangedTailWithoutFalseConflict() {
+        Backend backend = new Backend(directory) {
+            @Override public long sliceDeadline() { return 0; }
+            @Override public void notifyNeighbours(BlockPos pos) {
+                super.notifyNeighbours(pos);
+                if (notifyCount == 1) blocks.put(new BlockPos(0,0,-1),DIRT);
+            }
+        };
+        BuilderSession session = session(backend);
+        assertDoesNotThrow(() -> session.syncPhysics(BOUNDS));
+        assertEquals(27,backend.notifyCount);
+        assertEquals(DIRT,backend.read(new BlockPos(0,0,-1)));
+    }
+
+    @Test void ordinaryConnectionRepairDoesNotBroadcastWholeVolumePhysics() throws Exception {
+        Backend backend=new Backend(directory);backend.repair=STONE;
+        BuilderSession session=session(backend);
+        JsonObject result=JsonParser.parseString(session.updateConnections(BOUNDS)).getAsJsonObject();
+        assertEquals("connection-shapes",result.get("phase").getAsString());
+        assertEquals(1,backend.writeCount);assertEquals(0,backend.notifyCount);
+        assertEquals(STONE,backend.read(new BlockPos(0,1,0)));
+        session.finish();
+        var journal=new OperationJournal(directory.resolve("journals")).list().getFirst();
+        assertEquals(1,journal.entries().size());
+        assertEquals(BlockSpec.fromJson(AIR),journal.entries().getFirst().before());
+        assertEquals(BlockSpec.fromJson(STONE),journal.entries().getFirst().verified());
+        var shape=invocation.evidence.getLast();
+        assertEquals("native-shapes;explicit-writes-only;no-physics-broadcast",shape.details().get("openallay_builder:coverage"));
+    }
+
+    @Test void bulkSparsePositionsPreserveOrderDuplicatesFullEntitiesAndFreshCapture() {
+        Backend backend=new Backend(directory);
+        String chest="{\"id\":\"minecraft:chest\",\"properties\":{},\"blockEntity\":\"{Items:[]}\"}";
+        backend.blocks.put(new BlockPos(-1,1,2),chest);
+        BuilderSession session=session(backend);
+        String input="[{\"x\":-1,\"y\":1,\"z\":2},{\"x\":5,\"y\":1,\"z\":2},{\"x\":-1,\"y\":1,\"z\":2}]";
+        var result=JsonParser.parseString(session.readPositions(input)).getAsJsonArray();
+        assertEquals(3,result.size());assertEquals(1,backend.callCount);
+        assertEquals(chest,result.get(0).getAsJsonObject().get("state").toString());
+        assertEquals(AIR,result.get(1).getAsJsonObject().get("state").toString());
+        assertEquals(result.get(0),result.get(2));
+        backend.blocks.put(new BlockPos(-1,1,2),DIRT);
+        var fresh=JsonParser.parseString(session.readPositions(input)).getAsJsonArray();
+        assertEquals(DIRT,fresh.get(0).getAsJsonObject().get("state").toString());
+        assertEquals("multi-slice-non-atomic",invocation.evidence.getLast().details().get("openallay_builder:consistency"));
+    }
+
+    @Test void invalidOrUnloadedBulkPositionNeverPublishesCompletePartialResult() {
+        Backend backend=new Backend(directory) {
+            @Override public String read(BlockPos pos){if(pos.getX()==5)throw new BuilderException("chunk_unavailable","unloaded");return super.read(pos);}
+        };
+        BuilderSession session=session(backend);
+        assertThrows(BuilderException.class,()->session.readPositions("[{\"x\":0,\"y\":1,\"z\":0},{\"x\":5,\"y\":1,\"z\":0}]"));
+        assertTrue(invocation.evidence.isEmpty());
+        int calls=backend.callCount;
+        assertThrows(BuilderException.class,()->session.readPositions("[{\"x\":0,\"y\":1,\"z\":0},{\"x\":1.5,\"y\":1,\"z\":0}]"));
+        assertEquals(calls,backend.callCount,"All coordinate parsing completes before native work");
     }
 
     static class Invocation implements SessionInvocation {

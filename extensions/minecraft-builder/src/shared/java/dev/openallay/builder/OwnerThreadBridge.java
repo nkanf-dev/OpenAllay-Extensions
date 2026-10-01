@@ -14,6 +14,7 @@ final class OwnerThreadBridge implements AutoCloseable {
     record Owner(Executor executor, BooleanSupplier isOwnerThread, Runnable validate) {}
     private final Thread worker = Thread.currentThread();
     private final Runnable requireActive;
+    private final java.util.concurrent.atomic.AtomicLong dispatches = new java.util.concurrent.atomic.AtomicLong();
     private final BooleanSupplier anyOwnerThread;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Set<Pending<?>> pending = ConcurrentHashMap.newKeySet();
@@ -35,44 +36,64 @@ final class OwnerThreadBridge implements AutoCloseable {
         requireActive.run();
     }
 
-    <T> T call(Owner owner, Callable<T> action) {
+    <T> T call(Owner owner, Callable<T> action) { return callAfter(null,owner,action); }
+
+    /** Chain owner validation directly to target dispatch. Neither game owner waits. */
+    <T> T callAfter(Owner gate, Owner owner, Callable<T> action) {
         checkWorker();
-        if (owner.isOwnerThread().getAsBoolean()) throw new BuilderException("owner_thread_wait", "Cannot wait on the target owner thread");
+        if (owner.isOwnerThread().getAsBoolean() || gate != null && gate.isOwnerThread().getAsBoolean())
+            throw new BuilderException("owner_thread_wait", "Cannot wait on a target owner thread");
         CompletableFuture<T> result = new CompletableFuture<>();
         Pending<T> task = new Pending<>(result, new AtomicBoolean());
         pending.add(task);
+        Runnable execute = () -> {
+            if (!task.claimed().compareAndSet(false, true)) return;
+            try {
+                validateOwner(owner);
+                result.complete(action.call());
+            } catch (Throwable failure) { result.completeExceptionally(failure); }
+        };
         try {
             checkActive();
-            owner.executor().execute(() -> {
-                if (!task.claimed().compareAndSet(false, true)) return;
+            dispatches.incrementAndGet();
+            if (gate == null) owner.executor().execute(execute);
+            else gate.executor().execute(() -> {
+                // Claim only when the actual bounded target action starts. close() may
+                // still cancel a server task queued after the client gate has run.
+                if (task.claimed().get()) return;
                 try {
-                    checkActive();
-                    if (!owner.isOwnerThread().getAsBoolean()) throw new BuilderException("wrong_owner", "Native action ran on the wrong thread");
-                    owner.validate().run();
-                    checkActive();
-                    result.complete(action.call());
-                } catch (Throwable failure) { result.completeExceptionally(failure); }
+                    validateOwner(gate);
+                    dispatches.incrementAndGet();
+                    owner.executor().execute(execute);
+                } catch (Throwable failure) {
+                    if (task.claimed().compareAndSet(false,true)) result.completeExceptionally(failure);
+                }
             });
             return result.get();
         } catch (InterruptedException interrupted) {
             close();
-            // close atomically claims/cancels queued work. A started bounded owner action
-            // must publish its outcome before worker journal cleanup; never discard it.
-            try {
-                return result.join();
-            } catch (java.util.concurrent.CompletionException failed) {
-                Throwable cause=failed.getCause();
-                if(cause instanceof RuntimeException runtime) throw runtime;
-                if(cause instanceof Error error) throw error;
-                throw new BuilderException("native_failure","Native action failed",cause);
-            } finally { Thread.currentThread().interrupt(); }
-        } catch (ExecutionException failed) {
-            Throwable cause = failed.getCause();
-            if (cause instanceof RuntimeException runtime) throw runtime;
-            if (cause instanceof Error error) throw error;
-            throw new BuilderException("native_failure", "Native action failed", cause);
-        } finally { pending.remove(task); }
+            // Queued work is cancelled. Started bounded actions must publish their
+            // outcome before worker journal cleanup; never discard that readback.
+            try { return result.join(); }
+            catch (java.util.concurrent.CompletionException failed) { throw propagate(failed.getCause()); }
+            finally { Thread.currentThread().interrupt(); }
+        } catch (ExecutionException failed) { throw propagate(failed.getCause()); }
+        finally { pending.remove(task); }
     }
+
+    private void validateOwner(Owner owner) {
+        checkActive();
+        if (!owner.isOwnerThread().getAsBoolean()) throw new BuilderException("wrong_owner", "Native action ran on the wrong thread");
+        owner.validate().run();
+        checkActive();
+    }
+    private static RuntimeException propagate(Throwable cause) {
+        if (cause instanceof RuntimeException runtime) return runtime;
+        if (cause instanceof Error error) throw error;
+        return new BuilderException("native_failure", "Native action failed", cause);
+    }
+
+    long dispatches() { return dispatches.get(); }
 
     @Override public void close() {
         if (closed.compareAndSet(false, true)) {

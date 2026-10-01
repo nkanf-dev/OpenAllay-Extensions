@@ -22,6 +22,7 @@ final class BuilderJsFixture {
             const writes = [];
             const regions = [];
             const connections = [];
+            const physics = [];
             const templates = {};
             const transforms = [];
             const lifecycle = [];
@@ -33,7 +34,7 @@ final class BuilderJsFixture {
             function seed(x,y,z,state) { cells[key(x,y,z)] = copy(state); }
             function reset() {
                 Object.keys(cells).forEach(function(k) { delete cells[k]; });
-                writes.length=0; regions.length=0; connections.length=0; transforms.length=0;
+                writes.length=0; regions.length=0; connections.length=0; physics.length=0; transforms.length=0;
             }
             function snapshot() { return copy(cells); }
             const backend = {
@@ -44,8 +45,21 @@ final class BuilderJsFixture {
                 },
                 readRegion: function(json) {
                     var b=JSON.parse(String(json)),values=[];
-                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)
-                        values.push({x:x,y:y,z:z,state:JSON.parse(backend.read(x,y,z))});
+                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++) {
+                        var state=JSON.parse(backend.read(x,y,z));
+                        if(!state||state.unknown||state.loaded===false||typeof state.id!=='string')throw new Error('fixture unobserved cell');
+                        if(b.omitAir===true&&state.id==='minecraft:air'&&Object.keys(state.properties||{}).length===0&&state.blockEntity===undefined)continue;
+                        values.push({x:x,y:y,z:z,state:state});
+                    }
+                    return JSON.stringify(values);
+                },
+                readPositions: function(json) {
+                    var points=JSON.parse(String(json)),values=[];
+                    for(var i=0;i<points.length;i++){
+                        var p=points[i],state=JSON.parse(backend.read(p.x,p.y,p.z));
+                        if(!state||state.unknown||state.loaded===false||typeof state.id!=='string')throw new Error('fixture unobserved cell');
+                        values.push({x:p.x,y:p.y,z:p.z,state:state});
+                    }
                     return JSON.stringify(values);
                 },
                 scanColumns: function(json) {
@@ -66,6 +80,26 @@ final class BuilderJsFixture {
                         columns.push(found);
                     }
                     return JSON.stringify(columns);
+                },
+                probeColumns: function(json) {
+                    var r=JSON.parse(String(json)),probes=[],x,z,y,col,values,request;
+                    for(x=r.minX;x<=r.maxX;x++)for(z=r.minZ;z<=r.maxZ;z++) {
+                        col=null;values=[];
+                        try {
+                            if(r.fixedY!==undefined)col={x:x,z:z,y:r.fixedY,block:null,properties:null};
+                            else {
+                                request=copy(r);request.minX=x;request.maxX=x;request.minZ=z;request.maxZ=z;
+                                col=JSON.parse(backend.scanColumns(JSON.stringify(request)))[0];
+                            }
+                            if(col.y!==null&&col.y+r.clearance<r.worldMaxY) {
+                                values=JSON.parse(backend.readRegion(JSON.stringify({minX:x,maxX:x,minZ:z,maxZ:z,minY:col.y,maxY:col.y+r.clearance})));
+                            }
+                            probes.push({x:x,z:z,column:col,cells:values});
+                        } catch(error) {
+                            probes.push({x:x,z:z,column:col,cells:[],error:{code:'unobserved_block',message:String(error)}});
+                        }
+                    }
+                    return JSON.stringify(probes);
                 },
                 write: function(x,y,z,json) {
                     const state=JSON.parse(String(json));
@@ -118,6 +152,10 @@ final class BuilderJsFixture {
                     connections.push(JSON.parse(String(json)));
                     return JSON.stringify({updated:true});
                 },
+                syncPhysics: function(json) {
+                    physics.push(JSON.parse(String(json)));
+                    return JSON.stringify({notified:true});
+                },
                 saveTemplate: function(name,json) {
                     templates[String(name)]=String(json);
                     return JSON.stringify({name:String(name),saved:true});
@@ -166,10 +204,23 @@ final class BuilderJsFixture {
         } catch(IOException failure){throw new IllegalStateException(failure);}
     }
 
-    static JsonElement execute(String source) { return execute(source,null,false); }
+    static JsonElement execute(String source) { return execute(source,(String)null,false); }
 
     /** Native Builder runs only in unrestricted invocations; workload assertions are not timed benchmarks. */
-    static JsonObject evaluateUnrestricted(String source) { return execute(source,null,true).getAsJsonObject(); }
+    static JsonObject evaluateUnrestricted(String source) { return execute(source,(String)null,true).getAsJsonObject(); }
+
+    /** Frozen shipped sources are a separate oracle; no production code loads them. */
+    static JsonObject evaluatePerformanceBaseline(String source) {
+        Map<String,String> baseline = new LinkedHashMap<>();
+        for (String name : new String[]{"building", "terrain", "presets"}) {
+            String path = "fixtures/builder-perf-baseline/" + name + ".js";
+            try (InputStream input = BuilderJsFixture.class.getClassLoader().getResourceAsStream(path)) {
+                if (input == null) throw new IllegalStateException("Missing performance oracle: " + path);
+                baseline.put("openallay_builder:" + name, new String(input.readAllBytes(), StandardCharsets.UTF_8));
+            } catch (IOException failure) { throw new IllegalStateException(failure); }
+        }
+        return execute(source, baseline, true).getAsJsonObject();
+    }
 
     private static JsonElement execute(String source,String terrainOracle) { return execute(source,terrainOracle,false); }
     private static JsonElement execute(String source,String terrainOracle,boolean unrestricted) {
@@ -181,6 +232,10 @@ final class BuilderJsFixture {
             if (text!=null) sources.put("openallay_builder:"+name,text);
         }
         if(terrainOracle!=null)sources.put("openallay_builder:terrain",terrainOracle);
+        return execute(source,sources,unrestricted);
+    }
+
+    private static JsonElement execute(String source,Map<String,String> sources,boolean unrestricted) {
         var runtime=new RhinoJavascriptRuntime(Duration.ofSeconds(10),
                 JavascriptRuntimeLimits.DEFAULT,new JavascriptModuleCatalog(sources));
         return runtime.execute(BACKEND+source,Map.of(),Map.of(),Map.of(),new CancellationSignal(),null,null,unrestricted).value();

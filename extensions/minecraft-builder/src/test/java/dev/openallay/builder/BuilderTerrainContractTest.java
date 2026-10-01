@@ -145,7 +145,7 @@ final class BuilderTerrainContractTest {
 
     @Test void flattenClearAndPathUseDetachedColumnBatchesWithoutAnyPerVoxelFacadeCalls() {
         JsonObject r=BuilderJsFixture.evaluateUnrestricted("""
-                var regionsRead=0,scalarReads=0,scans=0;
+                var regionsRead=0,scalarReads=0,scans=0,probes=0;
                 backend.read=function(){scalarReads++;throw new Error('per-voxel facade forbidden');};
                 backend.readRegion=function(json){
                     regionsRead++;var b=JSON.parse(String(json)),values=[];
@@ -157,6 +157,12 @@ final class BuilderTerrainContractTest {
                     for(var x=b.minX;x<=b.maxX;x++)for(var z=b.minZ;z<=b.maxZ;z++)columns.push({x:x,z:z,y:64,block:'minecraft:stone',properties:{}});
                     return JSON.stringify(columns);
                 };
+                backend.probeColumns=function(json){probes++;var r=JSON.parse(String(json)),out=[];
+                    for(var x=r.minX;x<=r.maxX;x++)for(var z=r.minZ;z<=r.maxZ;z++){
+                        var cells=[];for(var y=64;y<=64+r.clearance;y++)cells.push({x:x,y:y,z:z,state:{id:y===64?'minecraft:stone':'minecraft:air',properties:{}}});
+                        out.push({x:x,z:z,column:{x:x,z:z,y:64,block:'minecraft:stone',properties:{}},cells:cells});
+                    }return JSON.stringify(out);
+                };
                 // Native expectedBefore checks are covered at the Java seam; this test counts facade transports.
                 backend.writeRegion=function(json){var edits=JSON.parse(String(json));regions.push(edits);return JSON.stringify({verified:edits.length});};
                 builder.flatten_area(-24,-24,24,24,64,{depth:0});
@@ -166,16 +172,17 @@ final class BuilderTerrainContractTest {
                 var cleared={regionReads:regionsRead,writePlans:regions.length,assignments:regions.length?regions[0].length:0};
                 regionsRead=0;regions.length=0;
                 var path=builder.build_path({x:-24,z:0},{x:24,z:0});
-                return {flattened:flattened,cleared:cleared,path:path,pathReads:regionsRead,pathScans:scans,scalarReads:scalarReads};
+                return {flattened:flattened,cleared:cleared,path:path,pathReads:regionsRead,pathScans:scans,pathProbes:probes,scalarReads:scalarReads};
                 """);
         assertEquals(0,r.get("scalarReads").getAsInt());
-        assertEquals(2401,r.getAsJsonObject("flattened").get("regionReads").getAsInt());
+        assertEquals(49,r.getAsJsonObject("flattened").get("regionReads").getAsInt());
         assertEquals(1,r.getAsJsonObject("flattened").get("writePlans").getAsInt());
         assertEquals(2401,r.getAsJsonObject("flattened").get("assignments").getAsInt());
-        assertEquals(2401,r.getAsJsonObject("cleared").get("regionReads").getAsInt());
+        assertEquals(49,r.getAsJsonObject("cleared").get("regionReads").getAsInt());
         assertEquals(0,r.getAsJsonObject("cleared").get("assignments").getAsInt());
         assertEquals("built",r.getAsJsonObject("path").get("status").getAsString());
-        assertEquals(49,r.get("pathReads").getAsInt());assertEquals(49,r.get("pathScans").getAsInt());
+        assertEquals(0,r.get("pathReads").getAsInt());assertEquals(0,r.get("pathScans").getAsInt());
+        assertEquals(4,r.get("pathProbes").getAsInt());
     }
 
     @Test void derivedVegetationAndPathEditsCarryObservedImagesAndRejectChangeBeforeNativePreflight() {

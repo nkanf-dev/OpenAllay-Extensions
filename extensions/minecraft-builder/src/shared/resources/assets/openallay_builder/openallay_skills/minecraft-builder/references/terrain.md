@@ -73,15 +73,15 @@ native-air IDs or an unprimed map keep the full-height fallback, so modded block
 not silently disappear. The `create(backend)` contract requires detached region reads, native column scans and
 batch writes; it does not silently fall back to per-voxel owner round trips.
 
-Scans are read-only and do not create block-journal operations. Flattening, vegetation clearing and path planning also capture their needed columns
-through native region batches, rather than one owner round trip per voxel. Conditional
-edits carry their observed full before-image (including block-entity payloads) into native
-preflight; intervening changes fail instead of being adopted as a new overwrite baseline.
-Flatten/clear planning discards each read-only column after deriving its edits, so sparse
-sites do not retain an entire world-ceiling volume of air rows. Reads across batches
-are non-atomic observations of the live world. Cancellation, unloaded chunks or
-missing native blocks fail the call rather than returning partial rows or guessing
-a missing column. Scheduling quanta do not limit the rectangle or scan height.
+Scans are read-only and do not create block-journal operations. Flattening and
+vegetation clearing use sparse region tiles. Only canonical `minecraft:air` is
+omitted; cave air, void air, custom blocks, and block entities retain exact states.
+Path planning caches demand tiles with ground and full headroom snapshots.
+Prefetched errors are raised only when the route search needs that column.
+Conditional edits carry their full observed before-image into native preflight;
+intervening changes fail rather than becoming a new overwrite baseline.
+Observations across tiles are non-atomic. Scheduling quanta do not limit the
+rectangle, scan height, or search domain.
 
 ```javascript
 const terrain = builder.scan_ground(-8, -8, 8, 8, {

@@ -32,6 +32,8 @@ final class NativeBinding implements BuilderBackend {
     private OwnerThreadBridge.Owner clientOwner;
     private OwnerThreadBridge.Owner serverOwner;
     private Boolean terrainHeightmapSafe;
+    // Owner-action-local pending/live BE section masks. No live chunk or proof is cached.
+    private java.util.Map<Long,java.util.Set<Integer>> blockEntitySections;
 
     private NativeBinding(Minecraft client, ToolInvocationContext invocation) {
         if (!client.isSameThread()) throw new BuilderException("wrong_owner", "Capture requires the client owner thread");
@@ -85,9 +87,15 @@ final class NativeBinding implements BuilderBackend {
     }
 
     @Override public <T> T call(java.util.concurrent.Callable<T> action) {
-        bridge.call(clientOwner, () -> null);
-        return bridge.call(serverOwner, action);
+        return bridge.callAfter(clientOwner,serverOwner,() -> {
+            blockEntitySections=new java.util.HashMap<>();
+            try { return action.call(); }
+            finally { blockEntitySections=null; }
+        });
     }
+
+    @Override public long sliceDeadline() { return System.nanoTime() + 4_000_000L; }
+    @Override public long dispatches() { return bridge.dispatches(); }
 
     @Override public void validatePosition(BlockPos position) {
         validateServer();
@@ -115,7 +123,49 @@ final class NativeBinding implements BuilderBackend {
         });
     }
 
-    @Override public String read(BlockPos pos) { validatePosition(pos); return NativeBlockCodec.read(level,pos); }
+    @Override public String read(BlockPos pos) {
+        validatePosition(pos);
+        try { return NativeBlockCodec.read(level,pos); }
+        finally { if(blockEntitySections!=null)blockEntitySections.clear(); }
+    }
+    @Override public String readNonAir(BlockPos pos) {
+        validatePosition(pos);
+        var state = level.getBlockState(pos);
+        if (state == net.minecraft.world.level.block.Blocks.AIR.defaultBlockState() && level.getBlockEntity(pos) == null) return null;
+        try { return NativeBlockCodec.read(level,pos); }
+        finally {
+            // Native/modded BE serializers may have side effects. A proof mask may
+            // be reused only across read-only palette checks, not arbitrary hooks.
+            if(blockEntitySections!=null)blockEntitySections.clear();
+        }
+    }
+    @Override public boolean canonicalAir(BuilderBounds bounds) {
+        BlockPos min=new BlockPos(bounds.minX(),bounds.minY(),bounds.minZ());
+        BlockPos max=new BlockPos(bounds.maxX(),bounds.maxY(),bounds.maxZ());
+        validatePosition(min);validatePosition(max);
+        int chunkX=Math.floorDiv(bounds.minX(),16),chunkZ=Math.floorDiv(bounds.minZ(),16);
+        int sectionY=Math.floorDiv(bounds.minY(),16);
+        if(chunkX!=Math.floorDiv(bounds.maxX(),16) || chunkZ!=Math.floorDiv(bounds.maxZ(),16)
+                || sectionY!=Math.floorDiv(bounds.maxY(),16))
+            throw new IllegalArgumentException("Canonical-air proof requires one clipped section");
+        // getChunkNow never requests or generates a missing chunk.
+        var chunk=level.getChunkSource().getChunkNow(chunkX,chunkZ);
+        if(chunk==null)throw new BuilderException("chunk_unavailable","Chunk is not loaded; no implicit generation: "+min);
+        var section=chunk.getSection(chunk.getSectionIndex(bounds.minY()));
+        if(!canonicalAir(section))return false;
+        long key=net.minecraft.world.level.ChunkPos.pack(chunkX,chunkZ);
+        java.util.Set<Integer> occupied=blockEntitySections.computeIfAbsent(key,ignored -> {
+            java.util.Set<Integer> sections=new java.util.HashSet<>();
+            for(BlockPos pos:chunk.getBlockEntitiesPos())sections.add(Math.floorDiv(pos.getY(),16));
+            return sections;
+        });
+        return !occupied.contains(sectionY);
+    }
+    static boolean canonicalAir(net.minecraft.world.level.chunk.LevelChunkSection section) {
+        // Palette may include stale unused values: those only cause a safe slow fallback.
+        // hasOnlyAir/isAir would collapse cave, void and modded air and are not proofs.
+        return !section.maybeHas(state -> state!=net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+    }
     @Override public dev.openallay.builder.storage.BlockSpec terrainState(BlockPos pos) {
         validatePosition(pos);
         return NativeBlockCodec.terrainState(level,pos);
@@ -149,10 +199,13 @@ final class NativeBinding implements BuilderBackend {
     @Override public String preview(BlockPos pos,String state) { validatePosition(pos); return NativeBlockCodec.preview(level,pos,state); }
     @Override public WriteOutcome write(BlockPos pos,String state) {
         validatePosition(pos);
-        String before = NativeBlockCodec.read(level,pos);
+        return write(pos,state,NativeBlockCodec.read(level,pos));
+    }
+    @Override public WriteOutcome write(BlockPos pos,String state,String before) {
+        validatePosition(pos);
         try {
-            boolean changed = NativeBlockCodec.write(level,pos,state, () -> validatePosition(pos));
-            return new WriteOutcome(NativeBlockCodec.read(level,pos),changed,null);
+            NativeBlockCodec.VerifiedWrite result = NativeBlockCodec.writeVerified(level,pos,state, () -> validatePosition(pos));
+            return new WriteOutcome(result.actual(),result.changed(),null);
         } catch (RuntimeException failure) {
             // This action passed optimistic-before validation. Retain actual outcome even
             // when a native replacement hook fails or cancellation arrives mid-write.
@@ -168,21 +221,30 @@ final class NativeBinding implements BuilderBackend {
     }
     @Override public String transform(String state,int degrees,String mirror) { return NativeBlockCodec.transform(state,degrees,mirror); }
     @Override public String repairedState(BlockPos pos) {
+        RepairOutcome result=repair(pos);return result==null?null:result.intended();
+    }
+    @Override public RepairOutcome repair(BlockPos pos) {
         validatePosition(pos);
-        for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.values()) {
-            BlockPos neighbour = pos.relative(direction);
-            if (!level.isOutsideBuildHeight(neighbour)) validatePosition(neighbour);
+        for(net.minecraft.core.Direction direction:net.minecraft.core.Direction.values()) {
+            BlockPos neighbour=pos.relative(direction);
+            if(!level.isOutsideBuildHeight(neighbour))validatePosition(neighbour);
         }
-        var current = level.getBlockState(pos);
-        var updated = net.minecraft.world.level.block.Block.updateFromNeighbourShapes(current,level,pos);
-        if (updated == current) return null;
-        JsonObject state = com.google.gson.JsonParser.parseString(NativeBlockCodec.read(level,pos)).getAsJsonObject();
-        state.addProperty("id",net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(updated.getBlock()).toString());
-        JsonObject properties = new JsonObject();
-        updated.getValues().forEach(value -> properties.addProperty(value.property().getName(),value.valueName()));
-        state.add("properties",properties);
-        if (updated.getBlock() != current.getBlock()) state.remove("blockEntity");
-        return state.toString();
+        NativeBlockCodec.Snapshot before=NativeBlockCodec.snapshot(level,pos);
+        try {
+            var current=before.state();
+            var updated=net.minecraft.world.level.block.Block.updateFromNeighbourShapes(current,level,pos);
+            if(updated==current)return null;
+            // Keep the original pre-hook image for optimistic conflict checks. For a
+            // changed state, retain the exact post-hook BE payload as the old repair
+            // adapter did; an in-hook target mutation still fails the before gate.
+            JsonObject state=com.google.gson.JsonParser.parseString(NativeBlockCodec.read(level,pos)).getAsJsonObject();
+            state.addProperty("id",net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(updated.getBlock()).toString());
+            JsonObject properties=new JsonObject();
+            updated.getValues().forEach(value -> properties.addProperty(value.property().getName(),value.valueName()));
+            state.add("properties",properties);
+            if(updated.getBlock()!=current.getBlock())state.remove("blockEntity");
+            return new RepairOutcome(before.json(),state.toString());
+        } finally {if(blockEntitySections!=null)blockEntitySections.clear();}
     }
     @Override public void notifyNeighbours(BlockPos pos) {
         validatePosition(pos);

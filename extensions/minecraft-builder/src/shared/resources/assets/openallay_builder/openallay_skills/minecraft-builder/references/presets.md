@@ -24,7 +24,7 @@ All six methods have the signature `(x, y, z, options)`.
 - `doorMaterial` accepts a species/material name such as `oak`, `birch`, or `iron`; an unqualified door ID such as `oak_door`; or a qualified door block ID such as `example:cedar_door`. The block must support the native door properties.
 - Structural minimum dimensions keep named features usable. There are no arbitrary maximum dimensions. World build-height and integer-overflow bounds are checked before the first write. The native session can still reject unloaded cells, cancelled work, or invalid live placements. Presets are ordered online writes, not a promise of all-or-nothing rollback of the entire building.
 - Each method clears the required headroom. Cottage, windmill, and farm first flatten a bounded area with three underground layers. They require observed/loaded cells for that terrain step; unknown cells are not treated as air. Existing builds or terrain inside these footprints can be replaced.
-- Furniture and roof supports are completed before linked beds/doors are placed. The final connection update runs after the linked blocks exist. Custom materials must provide the support their selected roles require.
+- Furniture and roof supports are completed before linked beds/doors are placed. The final connection-shape update runs after the linked blocks exist, without an automatic full-region physics pass. Custom materials must provide the support their selected roles require.
 
 Each result contains:
 

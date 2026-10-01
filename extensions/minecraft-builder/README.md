@@ -67,9 +67,29 @@ or success claims. Template capture uses batched native region reads; undo batch
 race either initial capture or apply as conflicts, without overwriting them.
 
 Writes use Minecraft block state setters with client synchronization and deferred shape
-updates. `updateConnections` invokes native neighbor shape logic for the requested bounds
-plus a one-block halo, then dispatches normal neighbor and comparator-output notifications in bounded slices. The halo is read back after the pass. Native physics and comparator propagation are not retroactively attributed to the direct-block journal: edits by other actors between slices must not become our expected undo state. Later changed postimages report undo conflicts instead of being overwritten. Native block replacement can still have game effects, such as
-container drops and ticking entities. Those effects are outside the block journal.
+updates. `update_connections` (`updateConnections` in the native facade) normalizes native
+connection shapes in the requested bounds plus a one-block halo. Actual state changes use
+normal durable write/readback handling. Repair is one deterministic pass in section
+order, not a fixed-point solver or a wait for later game ticks. This traversal differs
+from the previous global voxel order. It no longer dispatches unconditional neighbor
+notifications across every air and interior cell. `sync_physics` (`syncPhysics` natively)
+is the explicit full-bounds-and-halo neighbor/comparator notification pass, with capture,
+comparison and readback in bounded owner slices. It does not implicitly run shape
+repair or wait for fluid, gravity, redstone or comparator behavior to settle on later
+ticks. Both methods preserve JS write barriers.
+Native physics and comparator propagation are not retroactively attributed to the
+direct-block journal. Later changed postimages report undo conflicts instead of being
+overwritten. Native block replacement can still have game effects, such as container
+drops and ticking entities. Those effects are outside the block journal.
+
+### Unreleased behavior change
+
+`update_connections` previously included the full region physics pass. It now performs
+shape normalization only; callers that need the old full-region notification effects
+must also call `sync_physics` explicitly. Presets use shape normalization by default.
+This is a public Extension behavior change, not an internal format version. Release notes
+and an Extension version decision are required before publication; this work does not
+tag or publish a release.
 
 ## Use
 

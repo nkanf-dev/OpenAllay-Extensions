@@ -114,6 +114,38 @@ final class NativeBlockCodecTest {
         }) assertThrows(BuilderException.class, () -> NativeBlockCodec.transform(state("chest", opaque), 90, "none"));
     }
 
+    @Test void repeatedNativeStatesReuseDetachedImmutablePaletteValues() {
+        var stone = Blocks.STONE.defaultBlockState();
+        assertSame(NativeBlockCodec.stateJson(stone),NativeBlockCodec.stateJson(stone));
+        var first = NativeBlockCodec.terrainState(Blocks.OAK_STAIRS.defaultBlockState());
+        assertSame(first,NativeBlockCodec.terrainState(Blocks.OAK_STAIRS.defaultBlockState()));
+        assertThrows(UnsupportedOperationException.class,() -> first.properties().put("facing","south"));
+        assertNull(first.blockEntity());
+        assertEquals(Blocks.STONE.defaultBlockState(),NativeBlockCodec.decode(NativeBlockCodec.stateJson(stone)));
+    }
+
+    @Test void decodedPaletteNeverCachesMutableEntityTagsOrAcceptsMalformedLaterInputs() {
+        NativeBlockCodec.decode("{\"id\":\"minecraft:stone\",\"properties\":{}}");
+        assertThrows(IllegalArgumentException.class,() -> NativeBlockCodec.decode("{\"id\":\"minecraft:stone\",\"properties\":{},\"id\":\"minecraft:air\"}"));
+        String input = state("chest","{id:'minecraft:chest',x:1,y:2,z:3,Items:[]}");
+        CompoundTag first = NativeBlockCodec.blockEntity(input);
+        first.putInt("x",999);
+        assertEquals(1,NativeBlockCodec.blockEntity(input).getIntOr("x",0));
+    }
+
+    @Test void canonicalAirSectionProofRejectsCaveVoidAndUnusedNoncanonicalPaletteValues() {
+        var palette = new net.minecraft.world.level.chunk.PalettedContainer<>(Blocks.AIR.defaultBlockState(),
+                net.minecraft.world.level.chunk.Strategy.createForBlockStates(net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY));
+        var section = new net.minecraft.world.level.chunk.LevelChunkSection(palette,null);
+        assertTrue(NativeBinding.canonicalAir(section));
+        section.setBlockState(1,1,1,Blocks.CAVE_AIR.defaultBlockState());
+        assertFalse(NativeBinding.canonicalAir(section),"Native isAir/hasOnlyAir cannot prove canonical identity");
+        section.setBlockState(1,1,1,Blocks.VOID_AIR.defaultBlockState());
+        assertFalse(NativeBinding.canonicalAir(section));
+        section.setBlockState(1,1,1,Blocks.AIR.defaultBlockState());
+        assertFalse(NativeBinding.canonicalAir(section),"An unused noncanonical palette entry only causes safe fallback");
+    }
+
     private static String state(String id, String snbt) {
         JsonObject json = new JsonObject();
         json.addProperty("id", id);

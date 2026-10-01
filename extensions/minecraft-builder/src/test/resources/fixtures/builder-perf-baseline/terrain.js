@@ -89,96 +89,36 @@ exports.install = function (api, util) {
             return !isAir(block) && !isLiquid(block) && !isVegetation(block) && accepted[block.id] === true;
         };
     }
-    // A transport tile is a work quantum, never an area or height limit.
-    var READ_TILE_CELLS = 32768;
     function reader(c) {
-        var columns = Object.create(null), empty = util.state('minecraft:air');
+        var cache = Object.create(null);
         function observed(block, key) {
             if (!block || block.unknown || block.loaded === false || typeof block.id !== 'string' || !block.id.length) {
                 throw new Error('Unknown or unloaded block at ' + key);
             }
             return util.state(block);
         }
-        function data(x, z) {
-            var key = x + ',' + z;
-            if (!own.call(columns, key)) { columns[key] = {states: Object.create(null), ranges: [], error: null}; }
-            return columns[key];
-        }
-        function covered(col, low, high) {
-            for (var n = 0; n < col.ranges.length; n++) {
-                if (low >= col.ranges[n][0] && high <= col.ranges[n][1]) { return true; }
-            }
-            return false;
-        }
-        function remember(col, low, high) {
-            var ranges = [], n, range;
-            for (n = 0; n < col.ranges.length; n++) {
-                range = col.ranges[n];
-                if (range[1] < low || range[0] > high) { ranges.push(range); }
-                else { low = Math.min(low, range[0]); high = Math.max(high, range[1]); }
-            }
-            ranges.push([low, high]); col.ranges = ranges;
-        }
-        function preloadRegion(x, z1, z2, low, high) {
-            if (low >= high) { return; }
-            // Native validates the entire region before publishing this sparse result.
-            // Only canonical minecraft:air may be omitted. cave_air/void_air retain
-            // their exact before-images, as do every custom ID and block entity.
-            var cells = util.readRegion({minX: x, maxX: x, minZ: z1, maxZ: z2,
-                minY: low, maxY: high - 1, omitAir: true});
-            if (!Array.isArray(cells)) { throw new Error('Invalid native region at ' + x + ',' + z1); }
-            var n, cell, col, index, previous = -1, depth = z2 - z1 + 1, z;
-            for (n = 0; n < cells.length; n++) {
-                cell = cells[n];
-                if (!cell || cell.x !== x || cell.z < z1 || cell.z > z2 || cell.y < low || cell.y >= high ||
-                        Math.floor(cell.z) !== cell.z || Math.floor(cell.y) !== cell.y) {
-                    throw new Error('Invalid native region cell at ' + x + ',' + z1);
-                }
-                index = (cell.y - low) * depth + cell.z - z1;
-                if (index <= previous) { throw new Error('Unordered native region at ' + x + ',' + z1); }
-                previous = index; col = data(x, cell.z);
-                if (!covered(col, cell.y, cell.y + 1)) { col.states[cell.y] = observed(cell.state, x + ',' + cell.y + ',' + cell.z); }
-            }
-            for (z = z1; z <= z2; z++) { remember(data(x, z), low, high); }
-        }
-        function deferred(col) {
-            if (col.error) { throw new Error(col.error.code + ': ' + col.error.message); }
-        }
         function preload(x, z, low, high) {
-            var col = data(x, z); deferred(col);
-            if (low >= high || covered(col, low, high)) { return; }
-            preloadRegion(x, z, z, low, high);
+            if (low >= high) { return; }
+            var cells = util.readRegion({minX: x, maxX: x, minZ: z, maxZ: z, minY: low, maxY: high - 1});
+            if (!Array.isArray(cells) || cells.length !== high - low) { throw new Error('Incomplete native column at ' + x + ',' + z); }
+            var n, cell, key;
+            for (n = 0; n < cells.length; n++) {
+                cell = cells[n]; key = x + ',' + (low + n) + ',' + z;
+                if (!cell || cell.x !== x || cell.z !== z || cell.y !== low + n) { throw new Error('Incomplete native column at ' + key); }
+                if (!own.call(cache,key)) { cache[key] = observed(cell.state,key); }
+            }
         }
         function read(x, y, z) {
             if (y < c.minY || y >= c.maxY) { throw new Error('Read outside world height at ' + x + ',' + y + ',' + z); }
-            var col = data(x, z); deferred(col);
-            if (!covered(col, y, y + 1)) { preload(x, z, y, y + 1); }
-            return own.call(col.states, y) ? col.states[y] : empty;
+            var key = x + ',' + y + ',' + z;
+            if (own.call(cache,key)) { return cache[key]; }
+            // Demand one observed cell through the batch contract when no caller preloaded
+            // its exact surface/clearance range. Public terrain callers preload columns.
+            preload(x,z,y,y+1);
+            return cache[key];
         }
         read.preload = preload;
-        read.preloadRegion = preloadRegion;
-        read.seed = function (x, z, low, high, cells, error) {
-            var col = data(x, z), n, cell;
-            col.error = error || null;
-            if (error || low === null || low >= high) { return; }
-            if (!Array.isArray(cells) || cells.length !== high - low) { throw new Error('Incomplete native probe at ' + x + ',' + z); }
-            for (n = 0; n < cells.length; n++) {
-                cell = cells[n];
-                if (!cell || cell.x !== x || cell.z !== z || cell.y !== low + n) { throw new Error('Invalid native probe at ' + x + ',' + z); }
-                col.states[cell.y] = observed(cell.state, x + ',' + cell.y + ',' + z);
-            }
-            remember(col, low, high);
-        };
-        read.nonAir = function (x, z, low, high) {
-            var col = data(x, z), ys = Object.keys(col.states), out = [], n, y;
-            for (n = 0; n < ys.length; n++) {
-                y = Number(ys[n]);
-                if (y >= low && y < high && !isAir(col.states[y])) { out.push(y); }
-            }
-            out.sort(function (a, b) { return a - b; });
-            return out;
-        };
-        read.release = function () { columns = Object.create(null); };
+        read.release = function () { cache = Object.create(null); };
         return read;
     }
     function column(x, z, range, read, accept, opts) {
@@ -244,10 +184,7 @@ exports.install = function (api, util) {
         util.integer(b.x1 - radius, 'expanded x1'); util.integer(b.x2 + radius, 'expanded x2');
         util.integer(b.z1 - radius, 'expanded z1'); util.integer(b.z2 + radius, 'expanded z2');
         var read = reader(c), edits = writer(read), accept = groundSet(opts);
-        var x, z, y, distance, existing, desired, exact, low, high, nonAir, n, tileEnd = null, changed = 0;
-        var coreLow = Math.max(c.minY, targetY - depth);
-        var coreHigh = clear === true ? c.maxY : Math.min(c.maxY, targetY + 1 + (clear || 0));
-        var tileColumns = Math.max(1, Math.floor(READ_TILE_CELLS / (coreHigh - coreLow)));
+        var x, z, y, distance, existing, desired, exact, low, changed = 0;
         for (x = b.x1 - radius; x <= b.x2 + radius; x++) {
             for (z = b.z1 - radius; z <= b.z2 + radius; z++) {
                 distance = Math.max(b.x1 - x, x - b.x2, b.z1 - z, z - b.z2, 0);
@@ -259,23 +196,16 @@ exports.install = function (api, util) {
                     low = Math.floor(exact);
                     desired = low + (rand() < exact - low ? 1 : 0);
                 }
-                high = clear === true ? c.maxY : Math.min(c.maxY, desired + 1 + (clear || 0));
-                if (distance === 0) {
-                    if (z === b.z1 || z > tileEnd) {
-                        tileEnd = Math.min(b.z2, z + tileColumns - 1);
-                        read.preloadRegion(x, z, tileEnd, coreLow, coreHigh);
-                    }
-                } else { read.preload(x, z, Math.max(c.minY, desired - depth), high); }
+                read.preload(x,z,Math.max(c.minY,desired-depth),clear === true ? c.maxY : Math.min(c.maxY,desired+1+(clear || 0)));
                 for (y = Math.max(c.minY, desired - depth); y < desired; y++) { edits.add(x, y, z, underground); }
                 edits.add(x, desired, z, surface);
                 if (clear) {
-                    nonAir = read.nonAir(x, z, desired + 1, high);
-                    for (n = 0; n < nonAir.length; n++) { edits.add(x, nonAir[n], z, empty); }
+                    for (y = desired + 1; y < (clear === true ? c.maxY : Math.min(c.maxY, desired + 1 + clear)); y++) {
+                        if (!isAir(read(x, y, z))) { edits.add(x, y, z, empty); }
+                    }
                 }
                 changed++;
-                if (distance > 0 || z === tileEnd) {
-                    read.release(); // Plans retain before-images, not an air-filled ceiling volume.
-                }
+                read.release(); // Planned edits retain their own before-image; don't retain a whole ceiling volume.
             }
         }
         edits.apply();
@@ -290,20 +220,15 @@ exports.install = function (api, util) {
         var low = Math.min(y1, y2), high = Math.max(y1, y2), mode = opts.mode === undefined ? 'vegetation' : opts.mode;
         if (low < c.minY || high >= c.maxY) { throw new Error('Clear bounds are outside world height'); }
         if (mode !== 'vegetation' && mode !== 'all') { throw new Error('mode must be vegetation or all'); }
-        var read = reader(c), edits = writer(read), empty = normalizedState('minecraft:air'), x, y, z, block, ys, n, tileEnd;
-        var tileColumns = Math.max(1, Math.floor(READ_TILE_CELLS / (high - low + 1)));
+        var read = reader(c), edits = writer(read), empty = normalizedState('minecraft:air'), x, y, z, block;
         for (x = b.x1; x <= b.x2; x++) {
             for (z = b.z1; z <= b.z2; z++) {
-                if (z === b.z1 || z > tileEnd) {
-                    tileEnd = Math.min(b.z2, z + tileColumns - 1);
-                    read.preloadRegion(x, z, tileEnd, low, high + 1);
+                read.preload(x,z,low,high+1);
+                for (y = low; y <= high; y++) {
+                    block = read(x, y, z);
+                    if (!isAir(block) && (mode === 'all' || isVegetation(block))) { edits.add(x, y, z, empty); }
                 }
-                ys = read.nonAir(x, z, low, high + 1);
-                for (n = 0; n < ys.length; n++) {
-                    y = ys[n]; block = read(x, y, z);
-                    if (mode === 'all' || isVegetation(block)) { edits.add(x, y, z, empty); }
-                }
-                if (z === tileEnd) { read.release(); }
+                read.release();
             }
         }
         edits.apply();
@@ -344,43 +269,12 @@ exports.install = function (api, util) {
                 Math.max(start.x, end.x) + upper, Math.max(start.z, end.z) + upper);
         }
         var columns = Object.create(null), nodes = Object.create(null), materials = palette(opts);
-        var tiles = Object.create(null), tileSize = 16, groundBlocks = groundIds(opts), plants = Object.keys(vegetation);
         function groundColumn(x, z) {
             var key = x + ',' + z;
             if (!own.call(columns, key)) {
-                var tx = Math.floor(x / tileSize) * tileSize, tz = Math.floor(z / tileSize) * tileSize;
-                var tileKey = tx + ',' + tz, request, probes, n, probe, col, px, pz, expected = 0;
-                if (!own.call(tiles, tileKey)) {
-                    request = {minX: Math.max(-2147483647, tx), minZ: Math.max(-2147483647, tz),
-                        maxX: Math.min(2147483647, tx + tileSize - 1), maxZ: Math.min(2147483647, tz + tileSize - 1),
-                        minY: range.minY, maxY: range.maxY, groundOnly: true, ground: groundBlocks, vegetation: plants,
-                        clearance: clearance, worldMinY: c.minY, worldMaxY: c.maxY};
-                    if (fixed !== null) { request.fixedY = fixed; }
-                    if (bounds) {
-                        request.minX = Math.max(request.minX, bounds.x1); request.maxX = Math.min(request.maxX, bounds.x2);
-                        request.minZ = Math.max(request.minZ, bounds.z1); request.maxZ = Math.min(request.maxZ, bounds.z2);
-                    }
-                    probes = util.probeColumns(request);
-                    if (!Array.isArray(probes)) { throw new Error('Invalid native probe tile'); }
-                    for (px = request.minX; px <= request.maxX; px++) {
-                        for (pz = request.minZ; pz <= request.maxZ; pz++) {
-                            probe = probes[expected++]; col = probe && probe.column;
-                            if (!probe || probe.x !== px || probe.z !== pz || (!col && !probe.error) ||
-                                    (col && (col.x !== px || col.z !== pz))) { throw new Error('Incomplete native probe tile'); }
-                            columns[px + ',' + pz] = probe;
-                        }
-                    }
-                    if (probes.length !== expected) { throw new Error('Invalid native probe tile size'); }
-                    tiles[tileKey] = true;
-                }
+                columns[key] = fixed === null ? column(x, z, range, read, ground, opts) : {x: x, z: z, y: fixed};
             }
-            var value = columns[key], col = value.column;
-            if (!col) { throw new Error(value.error.code + ': ' + value.error.message); }
-            if (!value.seeded && col.y !== null && col.y + clearance < c.maxY) {
-                read.seed(x, z, col.y, col.y + clearance + 1, value.cells, value.error);
-                value.seeded = true;
-            }
-            return col;
+            return columns[key];
         }
         function node(x, z) {
             var key = x + ',' + z, dx, dz, col, cell, y, min = null, max = null, cells = [], centerY = null;

@@ -455,6 +455,95 @@ final class BuilderGeometryContractTest {
         assertEquals(List.of(256,3),actual.getAsJsonArray("regions").asList().stream().map(JsonElement::getAsInt).toList());
     }
 
+    @Test
+    void connectionShapeRepairAndExplicitPhysicsUseSeparateNativeBarriers() {
+        JsonObject actual=BuilderJsFixture.evaluate("""
+                const events=[];
+                const originalRegion=backend.writeRegion;
+                backend.writeRegion=function(json){events.push('write');return originalRegion(json);};
+                backend.updateConnections=function(json){events.push('shape');connections.push(JSON.parse(String(json)));return '{"changed":0}';};
+                backend.syncPhysics=function(json){events.push('physics');physics.push(JSON.parse(String(json)));return '{"verified":27}';};
+                builder.batch(function(b){
+                    b.place_block(0,5,0,'stone');
+                    b.update_connections(1,6,1,0,5,0);
+                    b.place_block(1,5,0,'stone');
+                    b.sync_physics(1,6,1,0,5,0);
+                });
+                return {events:events,shape:connections,physics:physics,count:writes.length};
+                """);
+        assertEquals(List.of("write","shape","write","physics"),
+                actual.getAsJsonArray("events").asList().stream().map(JsonElement::getAsString).toList());
+        assertEquals(actual.get("shape"),actual.get("physics"));
+        assertEquals(1,actual.getAsJsonArray("shape").size());
+        assertEquals(2,actual.get("count").getAsInt());
+        JsonObject bounds=actual.getAsJsonArray("shape").get(0).getAsJsonObject();
+        assertEquals(0,bounds.get("minX").getAsInt());
+        assertEquals(6,bounds.get("maxY").getAsInt());
+    }
+
+    @Test
+    void regionAndSparseReadsMatchScalarFullStatesOrderingEntitiesAndFreshness() {
+        JsonObject actual=BuilderJsFixture.evaluate("""
+                for(var y=-2;y<=0;y++)for(var z=-3;z<=-2;z++)for(var x=-4;x<=-3;x++)
+                    seed(x,y,z,{id:'minecraft:stone',properties:{}});
+                seed(-4,-1,-3,{id:'minecraft:chest',properties:{facing:'west'},blockEntity:'{Lock:"test"}'});
+                seed(-3,0,-2,{id:'minecraft:void_air',properties:{}});
+                const scalar=[];
+                for(var y=-2;y<=0;y++)for(var z=-3;z<=-2;z++)for(var x=-4;x<=-3;x++)
+                    scalar.push({x:x,y:y,z:z,state:builder.get_block_full(x,y,z)});
+                const region=builder.read_region(-3,0,-2,-4,-2,-3);
+                const points=[{x:-3,y:0,z:-2},{x:-4,y:-1,z:-3},{x:-3,y:0,z:-2}];
+                const sparse=builder.get_blocks(points);
+                seed(-3,0,-2,{id:'minecraft:cave_air',properties:{}});
+                const fresh=builder.get_blocks(points);
+                return {scalar:scalar,region:region,sparse:sparse,fresh:fresh};
+                """);
+        assertEquals(actual.get("scalar"),actual.get("region"));
+        var sparse=actual.getAsJsonArray("sparse");
+        assertEquals(3,sparse.size());
+        assertEquals(sparse.get(0),sparse.get(2));
+        assertEquals("minecraft:void_air",sparse.get(0).getAsJsonObject().getAsJsonObject("state").get("id").getAsString());
+        assertEquals("{Lock:\"test\"}",sparse.get(1).getAsJsonObject().getAsJsonObject("state").get("blockEntity").getAsString());
+        assertEquals("minecraft:cave_air",actual.getAsJsonArray("fresh").get(0).getAsJsonObject().getAsJsonObject("state").get("id").getAsString());
+    }
+
+    @Test
+    void bulkInspectionFlushesPendingWritesAndRejectsUnknownWithoutPartialRows() {
+        JsonObject actual=BuilderJsFixture.evaluate("""
+                var calls={region:0,sparse:0,scalar:0};
+                backend.read=function(){calls.scalar++;throw new Error('scalar facade forbidden');};
+                function observed(x,y,z){return cells[key(x,y,z)]||{id:'minecraft:air',properties:{}};}
+                backend.readRegion=function(json){calls.region++;var b=JSON.parse(String(json)),out=[];
+                    for(var y=b.minY;y<=b.maxY;y++)for(var z=b.minZ;z<=b.maxZ;z++)for(var x=b.minX;x<=b.maxX;x++)
+                        out.push({x:x,y:y,z:z,state:observed(x,y,z)});
+                    return JSON.stringify(out);
+                };
+                backend.readPositions=function(json){calls.sparse++;var p=JSON.parse(String(json)),out=[];
+                    for(var i=0;i<p.length;i++)out.push({x:p[i].x,y:p[i].y,z:p[i].z,state:observed(p[i].x,p[i].y,p[i].z)});
+                    return JSON.stringify(out);
+                };
+                var read=builder.batch(function(b){
+                    b.place_block(-100,5,100,'stone');
+                    return b.get_blocks([{x:-100,y:5,z:100},{x:100,y:5,z:-100}]);
+                });
+                var region=builder.read_region(0,5,0,9,5,9);
+                seed(1,5,1,{unknown:true});
+                var rejected=[];
+                [function(){builder.get_blocks([{x:0,y:5,z:0},{x:1,y:5,z:1}]);},
+                 function(){builder.read_region(0,5,0,1,5,1);},
+                 function(){builder.get_blocks([{x:0,y:321,z:0}]);}].forEach(function(f){
+                    try{f();rejected.push(false);}catch(e){rejected.push(true);}
+                });
+                return {read:read,count:region.length,calls:calls,rejected:rejected};
+                """);
+        assertEquals("minecraft:stone",actual.getAsJsonArray("read").get(0).getAsJsonObject().getAsJsonObject("state").get("id").getAsString());
+        assertEquals(100,actual.get("count").getAsInt());
+        assertEquals(2,actual.getAsJsonObject("calls").get("region").getAsInt());
+        assertEquals(2,actual.getAsJsonObject("calls").get("sparse").getAsInt());
+        assertEquals(0,actual.getAsJsonObject("calls").get("scalar").getAsInt());
+        for(var rejected:actual.getAsJsonArray("rejected"))assertTrue(rejected.getAsBoolean());
+    }
+
     private static JsonObject run(String call) {
         return BuilderJsFixture.evaluate("const result=builder."+call+";return {cells:snapshot(),count:writes.length,result:result};");
     }

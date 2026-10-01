@@ -50,17 +50,37 @@ public final class NativeBlockCodec {
     private static final Set<String> CONTAINER_FIELDS = Set.of(
             "id", "x", "y", "z", "Items", "LootTable", "LootTableSeed", "lock", "CustomName", "components");
 
+    // Native states are canonical immutable values. Keep a bounded, owner-thread-local
+    // palette, never world handles, live entities, positions or mutable SNBT compounds.
+    private static final int PALETTE_SIZE = 4096;
+    private static final ThreadLocal<Palette> PALETTE = ThreadLocal.withInitial(Palette::new);
+    private static final class Palette {
+        final Map<String, BlockState> inputs = boundedPalette();
+        final Map<BlockState, String> encoded = boundedPalette();
+        final Map<BlockState, dev.openallay.builder.storage.BlockSpec> terrain = boundedPalette();
+    }
+    private static <K,V> Map<K,V> boundedPalette() {
+        return new java.util.LinkedHashMap<>(64, 0.75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<K,V> entry) { return size() > PALETTE_SIZE; }
+        };
+    }
+
     private NativeBlockCodec() {}
 
     /** Reads a block and its full native block-entity metadata from the live level. */
-    public static String read(ServerLevel level, BlockPos pos) {
-        checkOwnerAndPosition(level, pos);
-        BlockState state = level.getBlockState(pos);
-        BlockEntity entity = level.getBlockEntity(pos);
-        if (state.hasBlockEntity() && entity == null) {
-            throw new BuilderException("missing_block_entity", "Missing live block entity at " + pos);
-        }
-        return encode(state, entity == null ? null : save(level, entity));
+    public static String read(ServerLevel level, BlockPos pos) { return snapshot(level,pos).json(); }
+
+    /** Owner-only pre-hook snapshot. Non-BE states remain immutable native values until needed. */
+    record Snapshot(BlockState state,CompoundTag tag) { String json(){return encode(state,tag);} }
+    static Snapshot snapshot(ServerLevel level,BlockPos pos) {
+        checkOwnerAndPosition(level,pos);
+        BlockState state=level.getBlockState(pos);
+        BlockEntity entity=level.getBlockEntity(pos);
+        if(state.hasBlockEntity()&&entity==null)
+            throw new BuilderException("missing_block_entity","Missing live block entity at "+pos);
+        // Opaque BE data must be captured before arbitrary native shape hooks. Plain
+        // states need no JSON, properties map or string allocation at this stage.
+        return new Snapshot(state,entity==null?null:save(level,entity));
     }
 
     /** Terrain reads preserve IDs/properties, but never serialize container content. */
@@ -69,11 +89,17 @@ public final class NativeBlockCodec {
         BlockState state = level.getBlockState(pos);
         if (state.hasBlockEntity() && level.getBlockEntity(pos) == null)
             throw new BuilderException("missing_block_entity", "Missing live block entity at " + pos);
-        Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-        if (id == null) throw new IllegalArgumentException("Cannot encode an unregistered block");
-        Map<String,String> properties = new java.util.TreeMap<>();
-        state.getValues().forEach(value -> properties.put(value.property().getName(),value.valueName()));
-        return new dev.openallay.builder.storage.BlockSpec(id.toString(),properties);
+        return terrainState(state);
+    }
+
+    static dev.openallay.builder.storage.BlockSpec terrainState(BlockState state) {
+        return PALETTE.get().terrain.computeIfAbsent(state, value -> {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(value.getBlock());
+            if (id == null) throw new IllegalArgumentException("Cannot encode an unregistered block");
+            Map<String,String> properties = new java.util.TreeMap<>();
+            value.getValues().forEach(property -> properties.put(property.property().getName(),property.valueName()));
+            return new dev.openallay.builder.storage.BlockSpec(id.toString(),properties);
+        });
     }
 
     /**
@@ -82,7 +108,17 @@ public final class NativeBlockCodec {
      * The caller must dispatch to the game owner thread before touching native registries.
      */
     public static BlockState decode(String stateJson) {
-        return decode(parse(stateJson));
+        BlockState cached = PALETTE.get().inputs.get(stateJson);
+        if (cached != null) return cached;
+        JsonObject json = parse(stateJson);
+        BlockState state = decode(json);
+        cacheInput(stateJson, json, state);
+        return state;
+    }
+
+    private static void cacheInput(String input, JsonObject json, BlockState state) {
+        if (!state.hasBlockEntity() && (!json.has("blockEntity") || json.get("blockEntity").isJsonNull()))
+            PALETTE.get().inputs.put(input, state);
     }
 
     /** Returns a new compound, or null when blockEntity is absent/null. */
@@ -158,13 +194,20 @@ public final class NativeBlockCodec {
      * cancellation boundary. The next owner action rejects a cancelled invocation.
      */
     static boolean write(ServerLevel level, BlockPos pos, String stateJson, Runnable requireActive) {
+        return writeVerified(level, pos, stateJson, requireActive).changed();
+    }
+
+    /** Reuses the exact native verification readback; callers must not serialize it again. */
+    record VerifiedWrite(String actual, boolean changed) {}
+    static VerifiedWrite writeVerified(ServerLevel level, BlockPos pos, String stateJson, Runnable requireActive) {
         checkOwnerAndPosition(level, pos);
         Objects.requireNonNull(requireActive, "requireActive");
         Prepared prepared = prepare(level, pos, stateJson);
         BlockState before = level.getBlockState(pos);
         BlockEntity previousEntity = level.getBlockEntity(pos);
         CompoundTag previousTag = previousEntity == null ? null : save(level, previousEntity);
-        if (before.equals(prepared.state()) && Objects.equals(previousTag, prepared.tag())) return false;
+        if (before.equals(prepared.state()) && Objects.equals(previousTag, prepared.tag()))
+            return new VerifiedWrite(encode(before, previousTag), false);
 
         // One admission point for the synchronous owner-thread commit. Rechecking
         // between BE removal and insertion could leave a block with missing contents.
@@ -186,10 +229,11 @@ public final class NativeBlockCodec {
             level.blockEntityChanged(pos);
             level.sendBlockUpdated(pos, prepared.state(), prepared.state(), WRITE_FLAGS);
         }
-        if (!read(level, pos).equals(encode(prepared.state(), prepared.tag()))) {
+        String actual = read(level, pos);
+        if (!actual.equals(encode(prepared.state(), prepared.tag()))) {
             throw placementFailed(pos, "Native readback differs from the validated intended state");
         }
-        return true;
+        return new VerifiedWrite(actual, true);
     }
 
     private static boolean canTransformContainer(BlockState state, CompoundTag tag) {
@@ -211,11 +255,14 @@ public final class NativeBlockCodec {
     }
 
     private static Prepared prepare(ServerLevel level, BlockPos pos, String stateJson) {
+        BlockState cached = PALETTE.get().inputs.get(stateJson);
+        if (cached != null) return new Prepared(cached, null, null);
         JsonObject json = parse(stateJson);
         BlockState state = decode(json);
         CompoundTag tag = blockEntity(json);
         if (!state.hasBlockEntity()) {
             if (tag != null) throw new IllegalArgumentException("Block does not support blockEntity: " + json.get("id"));
+            cacheInput(stateJson, json, state);
             return new Prepared(state, null, null);
         }
         if (!(state.getBlock() instanceof EntityBlock entityBlock)) {
@@ -317,9 +364,14 @@ public final class NativeBlockCodec {
     }
 
     private static String encode(BlockState state, CompoundTag tag) {
+        if (tag == null) return stateJson(state);
         JsonObject json = encodeState(state);
-        if (tag != null) json.addProperty("blockEntity", tag.toString());
+        json.addProperty("blockEntity", tag.toString());
         return json.toString();
+    }
+
+    static String stateJson(BlockState state) {
+        return PALETTE.get().encoded.computeIfAbsent(state, value -> encodeState(value).toString());
     }
 
     /** Flat schema parsing rejects duplicate fields and Gson's legacy JSON extensions. */
