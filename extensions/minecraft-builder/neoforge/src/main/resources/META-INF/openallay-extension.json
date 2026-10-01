@@ -7,7 +7,7 @@
     "neoforge"
   ],
   "minecraftVersionRange": "[26.2,26.3)",
-  "openAllayApiVersionRange": "[0.2.1,0.3)",
+  "openAllayApiVersionRange": "[0.2.2,0.3)",
   "modIds": [
     "openallay_builder"
   ],
@@ -16,7 +16,7 @@
   "source": "https://github.com/nkanf-dev/OpenAllay-Extensions",
   "requirements": {
     "capabilities": [
-      "unrestricted-javascript"
+      "openallay_builder:world_write"
     ]
   }
 }

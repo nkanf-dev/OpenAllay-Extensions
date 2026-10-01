@@ -2,7 +2,11 @@
 
 `building.open(options)` obtains a request-bound native session using the
 current online Minecraft connection. `dimension` selects the requested current
-live dimension; `seed` controls JS random choices. The native context reports
+live dimension; `seed` controls JS random choices. Opening and reads work in
+normal restricted JavaScript without JVM access. Block writes, undo, connection
+repair and native physics require the separate Builder world-write grant. The
+grant is off by default and belongs only to this Extension; installation, read
+access and unrestricted JavaScript do not grant it. The native context reports
 whether execution is available. No method opens region files, level.dat or an
 offline world save.
 
@@ -15,7 +19,10 @@ the online session; it is not an offline save operation.
 
 `undo(operationId?)` requests restoration of a journal in the same live world
 incarnation and dimension. World identity uses a live Minecraft SavedData UUID,
-not a filesystem path. Undo compares verified postimages before restoration.
+not a filesystem path. Reads do not create that SavedData identity; the first
+authorized write or undo initializes it. `list_operations()` reads only an
+existing identity and returns no entries when none exists. Undo compares
+verified postimages before restoration.
 Changed cells are conflicts. Ambiguous pending intents from interrupted work
 are reported as uncertain and skipped, even if their current value happens to
 match the intended value. A failed operation can be undone explicitly as a new
@@ -56,7 +63,7 @@ interior cell. `sync_physics` is the explicit full-region neighbor and comparato
 notification pass, including halo capture, comparison and readback. Both calls
 flush pending JS writes before their native work.
 
-This changes the earlier behavior: `update_connections` previously also ran that
+Builder 0.2.0 changes the earlier behavior: `update_connections` previously also ran that
 full physics pass. Call `sync_physics` explicitly when those whole-region effects
 are required. Presets now finish with shape normalization only. The journal owns
 explicit block/shape writes, not ordinary physics cascades. Later physics or

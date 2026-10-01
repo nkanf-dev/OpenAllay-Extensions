@@ -259,7 +259,17 @@ exports.create=function(backend,settings) {
     });
     return api;
 };
-exports.open=function(o){o=options(o);return exports.create(Java.type("dev.openallay.builder.BuilderRuntime").open(JSON.stringify(o)),o);};
+exports.open=function(o){
+    o=options(o);
+    var native=require("openallay_builder:native"),session=native.open(JSON.stringify(o)),backend={};
+    ["context","read","readPositions","readRegion","scanColumns","probeColumns","write","writeRegion",
+        "transformState","updateConnections","syncPhysics","saveTemplate","loadTemplate","listTemplates",
+        "listOperations","status","finish","cancel","close"].forEach(function(name){
+        backend[name]=function(){return native[name].apply(undefined,[session].concat(Array.prototype.slice.call(arguments)));};
+    });
+    backend.undo=function(id){return native.undo(session,id===undefined?"":String(id));};
+    return exports.create(backend,o);
+};
 exports.open_world=exports.open;exports.quick_setup=exports.open;
 exports.ensure_deps=function(){return {module:"openallay_builder:building",backend:"online",extension:"openallay:builder"};};
 exports.resolve_save_path=function(){throw new Error("offline save paths are not used; call open({dimension:...}) for the current online world");};

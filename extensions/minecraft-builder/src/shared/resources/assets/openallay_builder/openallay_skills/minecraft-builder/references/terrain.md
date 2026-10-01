@@ -43,7 +43,7 @@ Extension's normal authorized online session. These functions never edit save fi
 
 ## Scan terrain
 
-```javascript
+```text
 builder.scan_terrain(x1, z1, x2, z2, options?)
 builder.scan_ground(x1, z1, x2, z2, options?)
 ```
@@ -83,15 +83,22 @@ intervening changes fail rather than becoming a new overwrite baseline.
 Observations across tiles are non-atomic. Scheduling quanta do not limit the
 rectangle, scan height, or search domain.
 
+Analyze the complete detached scan in JavaScript. For example, return its bounds
+and ground-block counts:
+
 ```javascript
-const terrain = builder.scan_ground(-8, -8, 8, 8, {
-    groundBlocks: ["example:limestone"]
-});
+var builder = require("openallay_builder:building").open({seed: 42});
+var terrain = builder.scan_ground(-8, -8, 8, 8);
+var groundBlocks = terrain.reduce(function (counts, column) {
+    if (column.block !== null) counts[column.block] = (counts[column.block] || 0) + 1;
+    return counts;
+}, {});
+return {bounds: builder.get_terrain_bounds(terrain), groundBlocks: groundBlocks};
 ```
 
 ## Summarize scanned bounds
 
-```javascript
+```text
 builder.get_terrain_bounds(columns)
 ```
 
@@ -104,7 +111,7 @@ but null vertical extrema. This function does not read the world.
 
 ## Flatten a build site
 
-```javascript
+```text
 builder.flatten_area(x1, z1, x2, z2, targetY, options?)
 ```
 
@@ -141,7 +148,7 @@ Nothing outside the annulus is edited. Return adds `{columns,targetY,blendRadius
 
 ## Clear vegetation or an entire volume
 
-```javascript
+```text
 builder.clear_vegetation(x1, y1, z1, x2, y2, z2, options?)
 ```
 
@@ -155,7 +162,7 @@ invalid coordinates or out-of-dimension bounds throw before writes.
 
 ## Straight paths
 
-```javascript
+```text
 builder.build_path({x:startX,z:startZ}, {x:endX,z:endZ}, options?)
 builder.build_path(x1, z1, x2, z2, y, options?) // fixed-Y compatibility overload
 ```
@@ -204,7 +211,7 @@ movement nor removed. Numeric fixed-Y overload `y` overrides `options.y`.
 
 ## Smart terrain paths
 
-```javascript
+```text
 builder.build_smart_path({x:startX,z:startZ}, {x:endX,z:endZ}, options?)
 ```
 
@@ -248,12 +255,15 @@ Both path functions return
   operation failure and is not hidden as a no-route result.
 
 ```javascript
-const route = builder.build_smart_path({x:-12,z:-8}, {x:22,z:14}, {
+var builder = require("openallay_builder:building").open({seed: 42});
+var route = builder.build_smart_path({x:-12,z:-8}, {x:22,z:14}, {
     bounds: {x1:-20,z1:-16,x2:30,z2:22},
     width: 2, maxStep: 1, heightPenalty: 2, diagonal: true,
     blocks: ["gravel", "coarse_dirt"], seed: "garden-walk"
 });
-if (route.status !== "built") {
-    // Inspect route.reason; do not assume that paving happened.
-}
+return {
+    status: route.status, reason: route.reason, cost: route.cost,
+    pathLength: route.path.length, columns: route.columns,
+    writes: route.writes, native: builder.finish()
+};
 ```

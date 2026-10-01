@@ -17,6 +17,31 @@ class BuilderWorldIdentityTest {
         }
     }
 
+    @Test void readingMissingNativeSavedDataIdentityDoesNotCreateOrPersistIt() throws Exception {
+        try(var storage=new net.minecraft.world.level.storage.SavedDataStorage(directory,
+                net.minecraft.util.datafix.DataFixers.getDataFixer(),net.minecraft.core.RegistryAccess.EMPTY)) {
+            assertNull(storage.get(BuilderWorldIdentity.TYPE));
+        }
+        try(var files=java.nio.file.Files.walk(directory)) {
+            assertTrue(files.noneMatch(java.nio.file.Files::isRegularFile));
+        }
+    }
+
+    @Test void readingExistingNativeSavedDataIdentityDoesNotMarkItDirty() {
+        String original;
+        try(var storage=new net.minecraft.world.level.storage.SavedDataStorage(directory,
+                net.minecraft.util.datafix.DataFixers.getDataFixer(),net.minecraft.core.RegistryAccess.EMPTY)) {
+            original=storage.computeIfAbsent(BuilderWorldIdentity.TYPE).id();
+        }
+        try(var storage=new net.minecraft.world.level.storage.SavedDataStorage(directory,
+                net.minecraft.util.datafix.DataFixers.getDataFixer(),net.minecraft.core.RegistryAccess.EMPTY)) {
+            BuilderWorldIdentity existing=storage.get(BuilderWorldIdentity.TYPE);
+            assertNotNull(existing);
+            assertEquals(original,existing.id());
+            assertFalse(existing.isDirty());
+        }
+    }
+
     @Test void recreatedWorldGetsDifferentIdentityEvenAtSamePathAndSeed() {
         assertNotEquals(new BuilderWorldIdentity().id(),new BuilderWorldIdentity().id());
     }

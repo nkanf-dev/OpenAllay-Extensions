@@ -1,7 +1,7 @@
 {
   "repository": "nkanf-dev/OpenAllay",
-  "revision": "cdc1a70eb2c143c535d8659701689071ae51e803",
+  "revision": "639892561d78d47a4d1b4b99f935b372b73bac71",
   "minecraftVersion": "26.2",
-  "openAllayVersion": "0.2.3",
-  "openAllayApiVersion": "0.2.1"
+  "openAllayVersion": "0.3.0",
+  "openAllayApiVersion": "0.2.2"
 }

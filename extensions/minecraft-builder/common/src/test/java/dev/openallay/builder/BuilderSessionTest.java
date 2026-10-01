@@ -409,6 +409,7 @@ class BuilderSessionTest {
         public String context(){return "{\"minY\":-64,\"maxY\":320}";}
         public String dimension(){return "minecraft:overworld";}
         public String worldId(){return "test-world";}
+        public java.util.Optional<String> existingWorldId(){return java.util.Optional.of("test-world");}
         public Path artifacts(){return path;}
     }
 }

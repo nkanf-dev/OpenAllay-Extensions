@@ -19,10 +19,10 @@ public final class BuilderExtension implements OpenAllayExtension {
     private final String loader;
     public BuilderExtension(String loader) { this.loader = loader; }
     @Override public OpenAllayExtensionDescriptor descriptor() {
-        return new OpenAllayExtensionDescriptor("openallay:builder", "Minecraft Builder", "0.1.0",
+        return new OpenAllayExtensionDescriptor("openallay:builder", "Minecraft Builder", "0.2.0",
                 "OpenAllay", "Full online construction for the active integrated Minecraft server.",
-                Set.of(loader), "[26.2,26.3)", "[0.2.1,0.3)", "https://github.com/nkanf-dev/OpenAllay-Extensions",
-                new RequirementSet(Set.of("unrestricted-javascript"), Set.of(), Set.of()));
+                Set.of(loader), "[26.2,26.3)", "[0.2.2,0.3)", "https://github.com/nkanf-dev/OpenAllay-Extensions",
+                new RequirementSet(Set.of(BuilderBindings.WORLD_WRITE), Set.of(), Set.of()));
     }
     @Override public OpenAllayExtensionContribution contribution() {
         String root = "assets/openallay_builder/";
@@ -36,7 +36,8 @@ public final class BuilderExtension implements OpenAllayExtension {
             files.put(path, resource(root+path));
         }
         SkillSource skill = new SkillSource("openallay:builder", skillRoot+"SKILL.md", files, SkillSource.Origin.EXTERNAL);
-        return new OpenAllayExtensionContribution(List.of(), modules, List.of(skill), List.of(), List.of(new BuilderParticipant(loader)));
+        return new OpenAllayExtensionContribution(List.of(), modules, List.of(skill), List.of(),
+                List.of(new BuilderParticipant(loader)), List.of(BuilderBindings.binding()), List.of(BuilderBindings.capability()));
     }
     private static String resource(String path) {
         try (InputStream input = BuilderExtension.class.getClassLoader().getResourceAsStream(path)) {

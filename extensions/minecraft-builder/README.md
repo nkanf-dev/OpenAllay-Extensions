@@ -6,22 +6,24 @@ OpenAllay core supplies only its generic Extension and JavaScript invocation int
 
 ## Build
 
-Build the current OpenAllay common artifact first. This package requires OpenAllay product
-**0.2.3** and Extension API **0.2.1** or newer within the 0.2 series.
+Build the current OpenAllay common artifact first. Builder **0.2.0** requires
+OpenAllay product **0.3.x** (`[0.3.0,0.4)`) and Extension API **0.2.2**
+(`[0.2.2,0.3)`). Product and public API versions are independent.
 
 ```sh
 /path/to/OpenAllay/gradlew -p /path/to/OpenAllay :common:jar
-./gradlew -PopenallayArtifactsDir=/path/to/OpenAllay :common:test :fabric:build :neoforge:build verifyLoaderPackages
+/path/to/OpenAllay/gradlew -p /path/to/OpenAllay-Extensions/extensions/minecraft-builder \
+  -PopenallayArtifactsDir=/path/to/OpenAllay :common:test :fabric:build :neoforge:build verifyLoaderPackages
 ```
 
-Alternatively use `-PopenallayCommonJar=/absolute/path/to/openallay-common-26.2-0.2.3.jar`.
+Alternatively use `-PopenallayCommonJar=/absolute/path/to/openallay-common-26.2-0.3.0.jar`.
 The common product JAR is a **compile-only** dependency. No OpenAllay or Minecraft classes
 are copied into the packages. Each loader has its own normal entrypoint and metadata.
 
 Outputs:
 
-- `fabric/build/libs/openallay-builder-fabric-26.2-0.1.0.jar`
-- `neoforge/build/libs/openallay-builder-neoforge-26.2-0.1.0.jar`
+- `fabric/build/libs/openallay-builder-fabric-26.2-0.2.0.jar`
+- `neoforge/build/libs/openallay-builder-neoforge-26.2-0.2.0.jar`
 
 ## Online backend
 
@@ -30,10 +32,15 @@ player, network connection, client level, integrated server and server level. It
 those identities, cancellation and invocation lifetime before queued native actions.
 A remote server is not an authoritative local world. It returns `unsupported_topology`;
 there is no ghost-client edit, command fallback, offline save edit or remote write endpoint.
-Builder requires the already authorized unrestricted JavaScript invocation. Installation
-does not turn that capability on. It adds no creative-mode or game-master gate.
+Normal restricted JavaScript can open a Builder session and read this active integrated
+server without JVM access. World changes require the independent, Extension-owned
+`openallay_builder:world_write` grant, which is off by default. Installation, world
+observation and unrestricted JavaScript do not grant it. This permission covers block
+writes, undo, connection-shape repair and native physics notifications. It does not
+permit remote-server writes or another Extension's methods. Builder adds no separate
+creative-mode or game-master gate.
 
-Game state is read or changed on its game owner thread. JavaScript and Extension artifact IO remain on the invocation worker. Minecraft may load its own SavedData identity through the normal live server API on its owner thread; Minecraft owns its persistence. The adapter uses immutable JSON commands, never a Rhino callback
+Game state is read or changed on its game owner thread. JavaScript and Extension artifact IO remain on the invocation worker. Minecraft reads an existing SavedData world identity through its normal live server API on the server owner; it creates that identity only for an authorized write or undo. Opening, world reads and status do not create it, and read-only operation listing returns no entries when no identity exists. Minecraft owns its persistence. The adapter uses immutable JSON commands, never a Rhino callback
 on a game thread. Large operations use scheduling slices, not total size limits. Unloaded
 chunks, invalid block states and out-of-dimension coordinates fail explicitly. This version
 does not generate/load arbitrary chunks as a hidden side effect.
@@ -82,20 +89,29 @@ direct-block journal. Later changed postimages report undo conflicts instead of 
 overwritten. Native block replacement can still have game effects, such as container
 drops and ticking entities. Those effects are outside the block journal.
 
-### Unreleased behavior change
+### Builder 0.2.0 behavior change
 
 `update_connections` previously included the full region physics pass. It now performs
 shape normalization only; callers that need the old full-region notification effects
 must also call `sync_physics` explicitly. Presets use shape normalization by default.
-This is a public Extension behavior change, not an internal format version. Release notes
-and an Extension version decision are required before publication; this work does not
-tag or publish a release.
+This is a public Extension behavior change, not an internal format version.
+Builder 0.2.0 also replaces Agent JVM access with the controlled method module
+and independent world-write grant. These changes define the new public contract.
+The parent-owned release process creates the tag, verifies packages and publishes
+actual checksum-pinned assets; this source preparation does not publish them.
 
 ## Use
 
 Load the bundled `minecraft-builder` Skill and its focused references. The CommonJS module
-is `openallay_builder:building`. The module opens a worker-bound native session through
-`Java.type("dev.openallay.builder.BuilderRuntime").open(...)`.
+is `openallay_builder:building`. `building.open(options)` calls the controlled
+`openallay_builder:native` method module. It receives an opaque invocation-local
+session ID and wraps only the documented methods. Arguments and results are detached
+JSON values; no Java backend, session, class or reflection object reaches the Agent.
+The core freezes the player's per-Extension grant for the request. Server-origin
+requests have no native write grant. Missing write authority fails explicitly; there
+is no command fallback. Pure JavaScript execution keeps its normal interpreter budget.
+Time spent inside a trusted native method does not consume that interpreter budget;
+native work still checks cancellation and cooperatively yields on the game owners.
 Call `finish()` when a construction operation succeeds. It completes the block journal;
 it does not save or close Minecraft. `close()` in the JS facade finishes first. A successful JavaScript scope completes verified work during native cleanup. Failed or cancelled scopes preserve partial/interrupted journals. Explicit failures cannot be relabelled completed by cleanup. Cancellation stops queued work, not world changes already applied.
 
@@ -108,6 +124,9 @@ content; unsupported opaque/directional payload transforms fail instead of inven
 orientation fidelity. `write` rebases block-entity coordinates to the destination.
 
 Artifacts live below the Minecraft instance's `config/openallay-builder/` directory.
+Opening and template/journal methods can access these controlled Extension artifacts;
+read-only world access is not a promise of zero artifact IO. They do not expose a
+generic filesystem path or grant Agent JVM/filesystem access.
 Before each native mutation quantum, the worker forces an atomic delta containing the
 original and intended block images. After server readback it forces one atomic outcome
 delta containing actual images and known unstarted withdrawals. Scheduling remains 256

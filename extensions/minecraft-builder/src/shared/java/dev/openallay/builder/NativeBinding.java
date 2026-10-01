@@ -3,6 +3,7 @@ package dev.openallay.builder;
 import com.google.gson.JsonObject;
 import dev.openallay.context.CallerKind;
 import dev.openallay.context.ToolInvocationContext;
+import dev.openallay.extension.JavascriptInvocationContext;
 import java.nio.file.Path;
 import java.util.UUID;
 import net.minecraft.SharedConstants;
@@ -28,6 +29,7 @@ final class NativeBinding implements BuilderBackend {
     private String worldId;
     private Path artifacts;
     private final SessionIdentity identity;
+    private final Runnable requireWorldWrite;
     private OwnerThreadBridge bridge;
     private OwnerThreadBridge.Owner clientOwner;
     private OwnerThreadBridge.Owner serverOwner;
@@ -35,7 +37,9 @@ final class NativeBinding implements BuilderBackend {
     // Owner-action-local pending/live BE section masks. No live chunk or proof is cached.
     private java.util.Map<Long,java.util.Set<Integer>> blockEntitySections;
 
-    private NativeBinding(Minecraft client, ToolInvocationContext invocation) {
+    private NativeBinding(Minecraft client, JavascriptInvocationContext context) {
+        ToolInvocationContext invocation = context.invocation();
+        requireWorldWrite = () -> context.requireCapability(BuilderBindings.WORLD_WRITE);
         if (!client.isSameThread()) throw new BuilderException("wrong_owner", "Capture requires the client owner thread");
         this.client = client;
         if (invocation.caller().kind() != CallerKind.PLAYER || invocation.player().isEmpty())
@@ -53,10 +57,10 @@ final class NativeBinding implements BuilderBackend {
         validateClient();
     }
 
-    static NativeBinding capture(OwnerThreadBridge bridge, ToolInvocationContext invocation) {
+    static NativeBinding capture(OwnerThreadBridge bridge, JavascriptInvocationContext context) {
         Minecraft client = Minecraft.getInstance();
         OwnerThreadBridge.Owner captureOwner = new OwnerThreadBridge.Owner(client, client::isSameThread, () -> {});
-        NativeBinding binding = bridge.call(captureOwner, () -> new NativeBinding(client, invocation));
+        NativeBinding binding = bridge.call(captureOwner, () -> new NativeBinding(client, context));
         binding.bridge = bridge;
         binding.clientOwner = new OwnerThreadBridge.Owner(client, client::isSameThread, binding::validateClient);
         binding.serverOwner = new OwnerThreadBridge.Owner(binding.server, binding.server::isSameThread, binding::validateServer);
@@ -65,7 +69,6 @@ final class NativeBinding implements BuilderBackend {
             if (binding.player == null) throw stale();
             binding.level = binding.player.level();
             binding.identity.bindServer(binding.player, binding.level);
-            binding.worldId = binding.server.overworld().getDataStorage().computeIfAbsent(BuilderWorldIdentity.TYPE).id();
             binding.validateServer();
             return null;
         });
@@ -198,10 +201,12 @@ final class NativeBinding implements BuilderBackend {
     }
     @Override public String preview(BlockPos pos,String state) { validatePosition(pos); return NativeBlockCodec.preview(level,pos,state); }
     @Override public WriteOutcome write(BlockPos pos,String state) {
+        requireWorldWrite.run();
         validatePosition(pos);
         return write(pos,state,NativeBlockCodec.read(level,pos));
     }
     @Override public WriteOutcome write(BlockPos pos,String state,String before) {
+        requireWorldWrite.run();
         validatePosition(pos);
         try {
             NativeBlockCodec.VerifiedWrite result = NativeBlockCodec.writeVerified(level,pos,state, () -> validatePosition(pos));
@@ -224,6 +229,7 @@ final class NativeBinding implements BuilderBackend {
         RepairOutcome result=repair(pos);return result==null?null:result.intended();
     }
     @Override public RepairOutcome repair(BlockPos pos) {
+        requireWorldWrite.run();
         validatePosition(pos);
         for(net.minecraft.core.Direction direction:net.minecraft.core.Direction.values()) {
             BlockPos neighbour=pos.relative(direction);
@@ -247,6 +253,7 @@ final class NativeBinding implements BuilderBackend {
         } finally {if(blockEntitySections!=null)blockEntitySections.clear();}
     }
     @Override public void notifyNeighbours(BlockPos pos) {
+        requireWorldWrite.run();
         validatePosition(pos);
         var block = level.getBlockState(pos).getBlock();
         level.updateNeighborsAt(pos,block);
@@ -256,8 +263,27 @@ final class NativeBinding implements BuilderBackend {
 
     ServerLevel level() { return level; }
     @Override public String dimension() { return dimension; }
-    @Override public String worldId() { return worldId; }
+    @Override public String worldId() {
+        bridge.checkWorker();
+        requireWorldWrite.run();
+        if (worldId == null) worldId = call(() -> {
+            requireWorldWrite.run();
+            return server.overworld().getDataStorage().computeIfAbsent(BuilderWorldIdentity.TYPE).id();
+        });
+        return worldId;
+    }
+    @Override public java.util.Optional<String> existingWorldId() {
+        bridge.checkWorker();
+        if (worldId != null) return java.util.Optional.of(worldId);
+        // Native get reads/caches existing SavedData; it never invokes the constructor or setDirty.
+        return call(() -> {
+            BuilderWorldIdentity existing = server.overworld().getDataStorage().get(BuilderWorldIdentity.TYPE);
+            if (existing == null) return java.util.Optional.empty();
+            worldId = existing.id();
+            return java.util.Optional.of(worldId);
+        });
+    }
     @Override public Path artifacts() { return artifacts; }
-    boolean isServerThread() { return server.isSameThread(); }
+    @Override public boolean isOwnerThread() { return client.isSameThread() || server.isSameThread(); }
     private static BuilderException stale() { return new BuilderException("stale_session", "The exact player, connection, server or dimension binding is no longer active"); }
 }

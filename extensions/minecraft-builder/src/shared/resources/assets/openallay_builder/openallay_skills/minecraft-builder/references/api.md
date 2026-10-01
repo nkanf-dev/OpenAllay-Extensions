@@ -1,8 +1,8 @@
 # Setup and blocks
 
 ```js
-const building = require("openallay_builder:building");
-const b = building.open({dimension: "minecraft:overworld", seed: 42});
+var b = require("openallay_builder:building").open({dimension: "minecraft:overworld", seed: 42});
+return b.context();
 ```
 
 `open_world(options)` and `quick_setup(options)` alias `open`.
@@ -31,12 +31,16 @@ integers. Bounds in shape APIs include both endpoints and normalize reversal.
   notifications across the bounds and halo, with full readback. Use it when a
   whole-region physics pass is needed.
 
-For example, filter a detached region snapshot without one bridge call per cell:
+For example, count matching blocks in a detached region snapshot without one
+bridge call per cell:
 
 ```js
-return b.read_region(-2, 64, -2, 2, 66, 2).filter(function (cell) {
+var b = require("openallay_builder:building").open({seed: 42});
+var cells = b.read_region(-2, 64, -2, 2, 66, 2);
+var matches = cells.filter(function (cell) {
   return cell.state.id === "minecraft:stone_bricks";
 });
+return {observed: cells.length, stoneBricks: matches.length};
 ```
 
 BlockSpec properties are string values. A block entity is typed SNBT text, not
@@ -60,9 +64,11 @@ flush barriers. Nested batches share the pending plan. It returns the callback's
 value, or `{operation:"batch",writes}` when the callback returns nothing.
 
 ```js
-b.batch(function (b) {
+var b = require("openallay_builder:building").open({seed: 42});
+var result = b.batch(function (b) {
   for (var x = 0; x < 12; x++) b.place_block(x, 64, 0, "stone_bricks");
 });
+return {result: result, status: b.finish()};
 ```
 
 This is transport batching, not an all-or-nothing transaction. Errors discard

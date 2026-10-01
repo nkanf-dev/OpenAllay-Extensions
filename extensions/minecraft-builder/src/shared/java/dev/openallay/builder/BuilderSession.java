@@ -600,8 +600,13 @@ public final class BuilderSession implements AutoCloseable {
         active();
         try {
             JsonArray result = new JsonArray();
+            java.util.Optional<String> worldId = binding.existingWorldId();
+            if (worldId.isEmpty()) {
+                artifactEvidence("operation-list", 0);
+                return result.toString();
+            }
             for (OperationJournal.Snapshot item : journal.list()) {
-                if (!item.worldId().equals(binding.worldId()) || !item.dimension().equals(binding.dimension())) continue;
+                if (!item.worldId().equals(worldId.orElseThrow()) || !item.dimension().equals(binding.dimension())) continue;
                 JsonObject record = new JsonObject(); record.addProperty("id", item.id()); record.addProperty("label", item.label()); record.addProperty("status", item.status().name().toLowerCase()); record.addProperty("entries", item.entries().size()); result.add(record);
             }
             artifactEvidence("operation-list", result.size());

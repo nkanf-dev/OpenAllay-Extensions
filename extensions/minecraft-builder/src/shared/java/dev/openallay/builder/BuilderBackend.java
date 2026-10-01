@@ -11,6 +11,8 @@ interface BuilderBackend {
     /** Owner slice deadline; tests and detached backends use only deterministic work limits. */
     default long sliceDeadline() { return Long.MAX_VALUE; }
     default long dispatches() { return 0; }
+    /** True only when this captured native backend is running on either game owner. */
+    default boolean isOwnerThread() { return false; }
     void validatePosition(BlockPos position);
     String read(BlockPos position);
     /** Sparse capture omits only exact canonical air, never cave/void/custom air. */
@@ -46,6 +48,9 @@ interface BuilderBackend {
     void notifyNeighbours(BlockPos position);
     String context();
     String dimension();
+    /** Create/read the journal world identity only for an authorized native world action. */
     String worldId();
+    /** Read an existing identity without creating Minecraft SavedData. */
+    java.util.Optional<String> existingWorldId();
     Path artifacts();
 }

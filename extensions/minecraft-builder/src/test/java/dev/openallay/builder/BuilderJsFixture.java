@@ -206,7 +206,7 @@ final class BuilderJsFixture {
 
     static JsonElement execute(String source) { return execute(source,(String)null,false); }
 
-    /** Native Builder runs only in unrestricted invocations; workload assertions are not timed benchmarks. */
+    /** Detached JS workload oracle with relaxed interpreter budgets, not native authority or a timed benchmark. */
     static JsonObject evaluateUnrestricted(String source) { return execute(source,(String)null,true).getAsJsonObject(); }
 
     /** Frozen shipped sources are a separate oracle; no production code loads them. */
