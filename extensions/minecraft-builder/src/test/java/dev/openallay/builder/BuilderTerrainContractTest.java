@@ -144,7 +144,7 @@ final class BuilderTerrainContractTest {
     }
 
     @Test void flattenClearAndPathUseDetachedColumnBatchesWithoutAnyPerVoxelFacadeCalls() {
-        JsonObject r=BuilderJsFixture.evaluate("""
+        JsonObject r=BuilderJsFixture.evaluateUnrestricted("""
                 var regionsRead=0,scalarReads=0,scans=0;
                 backend.read=function(){scalarReads++;throw new Error('per-voxel facade forbidden');};
                 backend.readRegion=function(json){

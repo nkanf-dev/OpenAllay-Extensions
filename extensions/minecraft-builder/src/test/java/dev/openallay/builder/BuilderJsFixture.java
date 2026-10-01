@@ -166,8 +166,13 @@ final class BuilderJsFixture {
         } catch(IOException failure){throw new IllegalStateException(failure);}
     }
 
-    static JsonElement execute(String source) { return execute(source,null); }
-    private static JsonElement execute(String source,String terrainOracle) {
+    static JsonElement execute(String source) { return execute(source,null,false); }
+
+    /** Native Builder runs only in unrestricted invocations; workload assertions are not timed benchmarks. */
+    static JsonObject evaluateUnrestricted(String source) { return execute(source,null,true).getAsJsonObject(); }
+
+    private static JsonElement execute(String source,String terrainOracle) { return execute(source,terrainOracle,false); }
+    private static JsonElement execute(String source,String terrainOracle,boolean unrestricted) {
         Map<String,String> sources=new LinkedHashMap<>();
         sources.put("openallay_builder:building",resource("building.js"));
         // Optional companion modules are loaded from their shipped resources, never reimplemented.
@@ -178,7 +183,7 @@ final class BuilderJsFixture {
         if(terrainOracle!=null)sources.put("openallay_builder:terrain",terrainOracle);
         var runtime=new RhinoJavascriptRuntime(Duration.ofSeconds(10),
                 JavascriptRuntimeLimits.DEFAULT,new JavascriptModuleCatalog(sources));
-        return runtime.execute(BACKEND+source,Map.of(),Map.of(),new CancellationSignal()).value();
+        return runtime.execute(BACKEND+source,Map.of(),Map.of(),Map.of(),new CancellationSignal(),null,null,unrestricted).value();
     }
 
     static String resource(String name) {
