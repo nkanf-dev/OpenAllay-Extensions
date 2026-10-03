@@ -14,7 +14,7 @@ final class BuilderSkillContractTest {
     void extensionDeclaresAllModulesAndTheProgressivelyLoadedAdvisorySkill() {
         var extension = new BuilderExtension("fabric");
         assertEquals("openallay:builder", extension.descriptor().id());
-        assertEquals("0.2.0", extension.descriptor().version());
+        assertEquals("0.2.1", extension.descriptor().version());
         assertEquals("[0.2.2,0.3)", extension.descriptor().openAllayApiVersionRange());
         var contribution = extension.contribution();
         assertEquals(Set.of("openallay_builder:building", "openallay_builder:terrain", "openallay_builder:presets"),

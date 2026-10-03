@@ -2,7 +2,7 @@
 name: minecraft-builder
 description: Use when building structures, shaping terrain, laying paths, decorating, or copying structures in the current Minecraft world.
 metadata:
-  openallay/version: "0.2.0"
+  openallay/version: "0.2.1"
   openallay/requires-capabilities: "openallay_builder:world_write"
   openallay/requires-extensions: "openallay:builder"
 allowed-tools: "openallay:run_javascript"

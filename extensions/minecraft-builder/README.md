@@ -6,8 +6,8 @@ OpenAllay core supplies only its generic Extension and JavaScript invocation int
 
 ## Build
 
-Build the current OpenAllay common artifact first. Builder **0.2.0** requires
-OpenAllay product **0.3.x** (`[0.3.0,0.4)`) and Extension API **0.2.2**
+Build the current OpenAllay common artifact first. Builder **0.2.1** requires
+OpenAllay product **0.4.x** (`[0.4.0,0.5)`) and Extension API **0.2.2**
 (`[0.2.2,0.3)`). Product and public API versions are independent.
 
 ```sh
@@ -16,14 +16,17 @@ OpenAllay product **0.3.x** (`[0.3.0,0.4)`) and Extension API **0.2.2**
   -PopenallayArtifactsDir=/path/to/OpenAllay :common:test :fabric:build :neoforge:build verifyLoaderPackages
 ```
 
-Alternatively use `-PopenallayCommonJar=/absolute/path/to/openallay-common-26.2-0.3.0.jar`.
+Alternatively use `-PopenallayCommonJar=/absolute/path/to/openallay-common-26.2-0.4.0.jar`.
 The common product JAR is a **compile-only** dependency. No OpenAllay or Minecraft classes
 are copied into the packages. Each loader has its own normal entrypoint and metadata.
 
 Outputs:
 
-- `fabric/build/libs/openallay-builder-fabric-26.2-0.2.0.jar`
-- `neoforge/build/libs/openallay-builder-neoforge-26.2-0.2.0.jar`
+- `fabric/build/libs/openallay-builder-fabric-26.2-0.2.1.jar`
+- `neoforge/build/libs/openallay-builder-neoforge-26.2-0.2.1.jar`
+
+Builder 0.2.1 updates product compatibility to OpenAllay 0.4.x. It keeps the
+Builder 0.2.0 behavior described below and the same public Extension API range.
 
 ## Online backend
 

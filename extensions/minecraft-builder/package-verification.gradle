@@ -23,13 +23,13 @@ tasks.register('verifyLoaderPackages') {
                     throw new GradleException("Invalid loader metadata in ${archive}")
                 if (loader == 'fabric') {
                     def mod = new JsonSlurper().parse(jar.getInputStream(jar.getJarEntry(loaderMetadata)))
-                    if (mod.environment != 'client' || mod.id != 'openallay_builder' || mod.depends.openallay != '>=0.3.0 <0.4.0')
+                    if (mod.environment != 'client' || mod.id != 'openallay_builder' || mod.depends.openallay != '>=0.4.0 <0.5.0')
                         throw new GradleException('Builder Fabric must be client-only with product dependency')
                 } else {
                     def mod = new String(jar.getInputStream(jar.getJarEntry(loaderMetadata)).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-                    def dependency = '[[dependencies.openallay_builder]]\nmodId="openallay"\ntype="required"\nversionRange="[0.3.0,0.4.0)"\nordering="AFTER"\nside="CLIENT"'
+                    def dependency = '[[dependencies.openallay_builder]]\nmodId="openallay"\ntype="required"\nversionRange="[0.4.0,0.5)"\nordering="AFTER"\nside="CLIENT"'
                     if (!mod.contains(dependency))
-                        throw new GradleException('Builder NeoForge must declare the OpenAllay 0.3 product range')
+                        throw new GradleException('Builder NeoForge must declare the OpenAllay 0.4 product range')
                     def entrypoint = jar.getJarEntry('dev/openallay/builder/neoforge/BuilderNeoForgeEntrypoint.class')
                     def binary = new String(jar.getInputStream(entrypoint).readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
                     if (!binary.contains('Lnet/neoforged/api/distmarker/Dist;') || !binary.contains('CLIENT'))

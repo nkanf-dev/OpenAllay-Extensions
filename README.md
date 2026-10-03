@@ -25,10 +25,11 @@ API `0.2.0`.
 ## First-party Minecraft Builder
 
 [`extensions/minecraft-builder`](extensions/minecraft-builder) is the complete
-online construction Extension. Builder 0.2.0 is distributed by default with
-OpenAllay 0.3.0 source builds and requires public Extension API 0.2.2. Its Java adapter, reviewed JS modules, Skill, templates and tests live in
-this repository, not in OpenAllay core. It targets Java 25 and Minecraft 26.2 on
-Fabric and NeoForge, with client-only loader entrypoints.
+online construction Extension. Builder 0.2.1 targets OpenAllay 0.4.x source builds
+and requires public Extension API 0.2.2. Its Java adapter, reviewed JS modules,
+Skill, templates and tests live in this repository, not in OpenAllay core. It
+targets Java 25 and Minecraft 26.2 on Fabric and NeoForge, with client-only loader
+entrypoints.
 
 The native backend uses a controlled method module for the active integrated
 server. Normal JavaScript can read through it without Agent JVM access. World
