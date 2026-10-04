@@ -64,9 +64,49 @@ exports.install = function (api, util) {
             facing: facing,
             point: point,
             state: function (block, properties) {
-                var normalized = util.state(block, properties), key = JSON.stringify(normalized);
+                // Preserve exact caller IDs and properties. util.state's convenience
+                // aliases must not silently turn an unavailable custom ID into another block.
+                var exact = typeof block === "string" ? {id:block} : JSON.parse(JSON.stringify(block));
+                if (!exact || typeof exact !== "object" || Array.isArray(exact) || typeof exact.id !== "string") {
+                    fail("Preset material must be an exact block ID or BlockSpec");
+                }
+                if (exact.id.indexOf(":") < 0) { exact.id = "minecraft:" + exact.id; }
+                if (!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(exact.id)) { fail("Invalid preset block ID: " + exact.id); }
+                var supplied = exact.properties, property;
+                if (supplied !== undefined) {
+                    if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) { fail("BlockSpec properties must be an object"); }
+                    for (property in supplied) {
+                        if (own.call(supplied, property) && typeof supplied[property] !== "string") { fail("BlockSpec properties must have string values"); }
+                    }
+                }
+                var normalized = util.state(exact, properties), key = JSON.stringify(normalized);
                 if (!own.call(states, key)) { states[key] = api.transform_state(normalized, rotation * 90, "none"); }
                 return states[key];
+            },
+            material: function (role) {
+                var palette = world.materialPalette, material;
+                if (!palette || typeof palette !== "object" || Array.isArray(palette) || !own.call(palette, role)) {
+                    fail("material_unavailable: native material role '" + role + "' is absent. Inspect context().materialPalette, supply an exact registered state for its preset option, or choose a preset with available roles.");
+                }
+                material = palette[role];
+                if (!material || typeof material !== "object" || Array.isArray(material) || typeof material.id !== "string" || material.id.indexOf(":") < 0) {
+                    fail("material_unavailable: native material role '" + role + "' must be a canonical BlockSpec object with a qualified ID. The native adapter must provide a valid registered state.");
+                }
+                return c.state(material);
+            },
+            optionState: function (value, role, layoutProperties) {
+                if (value === undefined) { return c.material(role); }
+                // Only essential layout properties are added to explicit materials.
+                // A conflicting user property is an error, never silently replaced.
+                var supplied = value && typeof value === "object" ? value.properties : undefined, property;
+                if (supplied && layoutProperties) {
+                    for (property in layoutProperties) {
+                        if (own.call(layoutProperties, property) && own.call(supplied, property) && supplied[property] !== layoutProperties[property]) {
+                            fail("Preset material property conflicts with layout: " + property + " must be '" + layoutProperties[property] + "'");
+                        }
+                    }
+                }
+                return c.state(value, layoutProperties);
             },
             put: function (u, v, w, state) {
                 var p = point(u, v, w); touch(p);
@@ -141,9 +181,9 @@ exports.install = function (api, util) {
         for (t=2;t<d-2;t+=3) { c.put(0,v,t,glass); c.put(w-1,v,t,glass); }
     }
     function roofStates(c, stair, slab) {
-        return {east:c.state(stair,{facing:"east",half:"bottom",shape:"straight",waterlogged:"false"}),
-            west:c.state(stair,{facing:"west",half:"bottom",shape:"straight",waterlogged:"false"}),
-            ridge:c.state(slab,{type:"bottom",waterlogged:"false"})};
+        return {east:c.optionState(stair,"dark_oak_stairs_east",{facing:"east",half:"bottom",shape:"straight"}),
+            west:c.optionState(stair,"dark_oak_stairs_west",{facing:"west",half:"bottom",shape:"straight"}),
+            ridge:c.optionState(slab,"dark_oak_slab_bottom",{type:"bottom"})};
     }
     function pitched(c, w, h, d, roof, gable) {
         var u,t,v,step,peak = Math.floor((w+1)/2);
@@ -160,12 +200,12 @@ exports.install = function (api, util) {
         var o = optionSet(options,["w","width","d","depth","h","height","facing","foundation","wall","log","floor","roof","window","doorMaterial","bedColor"]);
         var w=size(o,"w","width",7,7), d=size(o,"d","depth",7,7), h=size(o,"h","height",5,4);
         var material=doorMaterial(o), color=text(o,"bedColor","red"), c=context(x,y,z,o), entrance=Math.floor((w-1)/2);
-        var foundation=c.state(pick(o,"foundation","cobblestone")), wall=c.state(pick(o,"wall","oak_planks"));
-        var log=c.state(pick(o,"log","oak_log"),{axis:"y"}), floor=c.state(pick(o,"floor","oak_planks"));
-        var roof=c.state(pick(o,"roof","stone_brick_slab"),{type:"bottom",waterlogged:"false"}), glass=c.state(pick(o,"window","glass_pane"));
-        var air=c.state("air"), tableBase=c.state("oak_fence"), tableTop=c.state("oak_pressure_plate",{powered:"false"});
-        var furnace=c.state("furnace",{facing:"north",lit:"false"}), chest=c.state("chest",{facing:"north",type:"single",waterlogged:"false"});
-        var lantern=c.state("lantern",{hanging:"true",waterlogged:"false"}), step=c.state("stone_brick_stairs",{facing:"south",half:"bottom",shape:"straight",waterlogged:"false"});
+        var foundation=c.optionState(o.foundation,"cobblestone"), wall=c.optionState(o.wall,"oak_planks");
+        var log=c.optionState(o.log,"oak_log_y",{axis:"y"}), floor=c.optionState(o.floor,"oak_planks");
+        var roof=c.optionState(o.roof,"stone_brick_slab_bottom",{type:"bottom"}), glass=c.optionState(o.window,"glass_pane");
+        var air=c.material("air"), tableBase=c.material("oak_fence"), tableTop=c.material("oak_pressure_plate_unpowered");
+        var furnace=c.material("furnace_north"), chest=c.material("chest_north_single");
+        var lantern=c.material("lantern_hanging"), step=c.material("stone_brick_stairs_south");
         linkedStates(c,material,color); c.reserve(-1,-2,-2,w,h+1,d);
         c.box(-1,1,-1,w,h+1,d,air);
         c.box(0,-2,0,w-1,0,d-1,foundation); c.box(0,0,0,w-1,0,d-1,floor);
@@ -185,17 +225,20 @@ exports.install = function (api, util) {
         var o=optionSet(options,["w","width","d","depth","floors","floor_h","floorHeight","facing","foundation","foundationDepth","floor","alternateFloor","glass","pier","ceiling","roofWall","antenna","doorMaterial"]);
         var w=size(o,"w","width",15,5), d=size(o,"d","depth",15,5), floors=positive(o,"floors",12);
         var fh=size(o,"floor_h","floorHeight",5,3), foundationDepth=positive(o,"foundationDepth",4), total=util.integer(floors*fh,"total height");
-        var material=doorMaterial(o), c=context(x,y,z,o), entrance=Math.floor((w-1)/2), palette=pick(o,"glass",["light_blue_stained_glass","cyan_stained_glass","blue_stained_glass"]);
-        if (!Array.isArray(palette) || palette.length === 0) { fail("glass must be a nonempty array of block states"); }
+        var material=doorMaterial(o), c=context(x,y,z,o), entrance=Math.floor((w-1)/2), palette=o.glass;
         var glass=[], i,u,v,t,k,level;
-        for (i=0;i<palette.length;i++) { glass.push(c.state(palette[i])); }
-        var foundation=c.state(pick(o,"foundation","stone_bricks")), first=c.state(pick(o,"floor","smooth_stone"));
-        var second=c.state(pick(o,"alternateFloor","polished_andesite")), pier=c.state(pick(o,"pier","iron_block"));
-        var ceiling=c.state(pick(o,"ceiling","smooth_stone")), roofWall=c.state(pick(o,"roofWall","stone_brick_wall"));
-        var antenna=c.state(pick(o,"antenna","iron_bars")), light=c.state("sea_lantern"), rod=c.state("lightning_rod",{facing:"up",powered:"false",waterlogged:"false"});
-        var air=c.state("air"), canopy=c.state("smooth_stone_slab",{type:"bottom",waterlogged:"false"});
-        var step=c.state("stone_brick_stairs",{facing:"south",half:"bottom",shape:"straight",waterlogged:"false"});
-        var ladder=c.state("ladder",{facing:"north",waterlogged:"false"});
+        if (palette === undefined) {
+            glass=[c.material("light_blue_stained_glass"),c.material("cyan_stained_glass"),c.material("blue_stained_glass")];
+        } else {
+            if (!Array.isArray(palette) || palette.length === 0) { fail("glass must be a nonempty array of block states"); }
+            for (i=0;i<palette.length;i++) { glass.push(c.state(palette[i])); }
+        }
+        var foundation=c.optionState(o.foundation,"stone_bricks"), first=c.optionState(o.floor,"smooth_stone");
+        var second=c.optionState(o.alternateFloor,"polished_andesite"), pier=c.optionState(o.pier,"iron_block");
+        var ceiling=c.optionState(o.ceiling,"smooth_stone"), roofWall=c.optionState(o.roofWall,"stone_brick_wall");
+        var antenna=c.optionState(o.antenna,"iron_bars"), light=c.material("sea_lantern"), rod=c.material("lightning_rod_up");
+        var air=c.material("air"), canopy=c.material("smooth_stone_slab_bottom");
+        var step=c.material("stone_brick_stairs_south"), ladder=c.material("ladder_north");
         linkedStates(c,material); c.reserve(0,-foundationDepth,-2,w-1,total+6,d-1);
         c.box(0,1,-2,w-1,total+6,d-1,air); c.box(0,-foundationDepth,0,w-1,0,d-1,foundation);
         for (k=0;k<floors;k++) {
@@ -234,13 +277,12 @@ exports.install = function (api, util) {
         if (o.roof_stair !== undefined && o.roofStair !== undefined && o.roof_stair !== o.roofStair) { fail("Conflicting roof_stair and roofStair"); }
         if (o.roof_slab !== undefined && o.roofSlab !== undefined && o.roof_slab !== o.roofSlab) { fail("Conflicting roof_slab and roofSlab"); }
         var material=doorMaterial(o), c=context(x,y,z,oriented), entrance=Math.floor((w-1)/2), peak=h+1+Math.floor((w+1)/2);
-        var foundation=c.state(pick(o,"foundation","cobblestone")), wall=c.state(pick(o,"wall","oak_planks"));
-        var logName=pick(o,"log","oak_log"), log=c.state(logName,{axis:"y"}), beamX=c.state(logName,{axis:"x"}), beamZ=c.state(logName,{axis:"z"});
-        var floor=c.state(pick(o,"floor","spruce_planks")), alternate=c.state(pick(o,"alternateFloor","oak_planks")), glass=c.state(pick(o,"window","glass_pane"));
-        var roof=roofStates(c,pick(o,"roof_stair",pick(o,"roofStair","dark_oak_stairs")),pick(o,"roof_slab",pick(o,"roofSlab","dark_oak_slab")));
-        var chimney=c.state(pick(o,"chimney","bricks")), campfire=c.state("campfire",{facing:"north",lit:"true",signal_fire:"false",waterlogged:"false"});
-        var lantern=c.state("lantern",{hanging:"true",waterlogged:"false"}), air=c.state("air");
-        var step=c.state("cobblestone_stairs",{facing:"south",half:"bottom",shape:"straight",waterlogged:"false"});
+        var foundation=c.optionState(o.foundation,"cobblestone"), wall=c.optionState(o.wall,"oak_planks");
+        var log=c.optionState(o.log,"oak_log_y",{axis:"y"}), beamX=c.optionState(o.log,"oak_log_x",{axis:"x"}), beamZ=c.optionState(o.log,"oak_log_z",{axis:"z"});
+        var floor=c.optionState(o.floor,"spruce_planks"), alternate=c.optionState(o.alternateFloor,"oak_planks"), glass=c.optionState(o.window,"glass_pane");
+        var roof=roofStates(c,pick(o,"roof_stair",o.roofStair),pick(o,"roof_slab",o.roofSlab));
+        var chimney=c.optionState(o.chimney,"bricks"), campfire=c.material("campfire_lit_north");
+        var lantern=c.material("lantern_hanging"), air=c.material("air"), step=c.material("cobblestone_stairs_south");
         linkedStates(c,material); c.reserve(-1,-3,-1,w,peak+4,d);
         c.flatten(-1,-1,w,d,foundation,foundation,3,peak+4); pattern(c,w,0,d,floor,alternate);
         shell(c,w,h,d,wall,log,air);
@@ -262,10 +304,10 @@ exports.install = function (api, util) {
         var bladeLength=positive(o,"bladeLength",Math.min(radius+2,height-4));
         if (bladeLength>height-4) { fail("bladeLength must leave the lower blade above the entrance (height - 4)"); }
         var material=doorMaterial(o), c=context(x,y,z,o), topRadius=radius-1, hub=height-1;
-        var foundation=c.state(pick(o,"foundation","cobblestone")), lower=c.state(pick(o,"lowerWall","stone_bricks"));
-        var upper=c.state(pick(o,"upperWall","white_concrete")), fence=c.state(pick(o,"bladeFence","oak_fence")), wool=c.state(pick(o,"blade","white_wool"));
-        var roof=c.state(pick(o,"roof","spruce_planks")), air=c.state("air"), axle=c.state("oak_log",{axis:"z"});
-        var step=c.state("stone_brick_stairs",{facing:"south",half:"bottom",shape:"straight",waterlogged:"false"});
+        var foundation=c.optionState(o.foundation,"cobblestone"), lower=c.optionState(o.lowerWall,"stone_bricks");
+        var upper=c.optionState(o.upperWall,"white_concrete"), fence=c.optionState(o.bladeFence,"oak_fence"), wool=c.optionState(o.blade,"white_wool");
+        var roof=c.optionState(o.roof,"spruce_planks"), air=c.material("air"), axle=c.material("oak_log_z");
+        var step=c.material("stone_brick_stairs_south");
         var extent=Math.max(radius+1,bladeLength+1), maxY=hub+bladeLength+1, u,v,t,r,dist,i,a,b;
         linkedStates(c,material); c.reserve(-extent,-3,-radius-2,extent,Math.max(height+1,maxY),radius+1);
         c.flatten(-extent,-radius-2,extent,radius+1,foundation,foundation,3,Math.max(height+1,maxY));
@@ -295,30 +337,39 @@ exports.install = function (api, util) {
 
     api.build_farm = function (x,y,z,options) {
         var o=optionSet(options,["w","width","d","depth","crops","facing","fence","gate","foundation"]);
-        var w=size(o,"w","width",20,1), d=size(o,"d","depth",16,1), entries=pick(o,"crops",["wheat","carrots","potatoes","beetroots"]);
-        if (!Array.isArray(entries) || entries.length===0) { fail("crops must be a nonempty array"); }
-        var c=context(x,y,z,o), crops=[], i,item,block,age,normalized,entryKey;
-        var maxAge={"minecraft:wheat":7,"minecraft:carrots":7,"minecraft:potatoes":7,"minecraft:beetroots":3};
-        for (i=0;i<entries.length;i++) {
-            item=entries[i];
-            if (typeof item==="string") { block=item; age=undefined; }
-            else if (item && typeof item==="object" && !Array.isArray(item)) {
-                for (entryKey in item) { if (own.call(item,entryKey) && entryKey!=="block" && entryKey!=="age") { fail("Unknown crop field: "+entryKey); } }
-                if (item.block===undefined) { fail("Crop objects require block"); }
-                block=item.block; age=item.age;
-            } else { fail("Each crop must be a block name or {block, age}"); }
-            normalized=util.state(block);
-            if (age===undefined) {
-                if (!own.call(maxAge,normalized.id)) { fail("Custom crops require an explicit age validated by the native registry"); }
-                age=maxAge[normalized.id];
+        var w=size(o,"w","width",20,1), d=size(o,"d","depth",16,1), entries=o.crops;
+        var c=context(x,y,z,o), crops=[], i,item,block,age,entryKey;
+        if (entries === undefined) {
+            crops=[c.material("wheat_mature"),c.material("carrots_mature"),c.material("potatoes_mature"),c.material("beetroots_mature")];
+        } else {
+            if (!Array.isArray(entries) || entries.length===0) { fail("crops must be a nonempty array"); }
+            for (i=0;i<entries.length;i++) {
+                item=entries[i];
+                if (typeof item==="string") { block=item; age=undefined; }
+                else if (item && typeof item==="object" && !Array.isArray(item)) {
+                    for (entryKey in item) { if (own.call(item,entryKey) && entryKey!=="block" && entryKey!=="age") { fail("Unknown crop field: "+entryKey); } }
+                    if (item.block===undefined) { fail("Crop objects require block"); }
+                    block=item.block; age=item.age;
+                } else { fail("Each crop must be an exact block ID or {block, age}"); }
+                if (age === undefined) {
+                    // Supplied BlockSpecs keep their age and every other property.
+                    // Supplied IDs use the native default, not a guessed mature age.
+                    crops.push(c.state(block));
+                } else {
+                    age=util.integer(age,"crop age");
+                    if (age<0) { fail("crop age must be nonnegative"); }
+                    if (block && typeof block==="object" && block.properties && block.properties.age!==undefined && block.properties.age!==String(age)) {
+                        fail("Conflicting crop age and BlockSpec age");
+                    }
+                    // The explicit age option alone adds this property. Its allowed
+                    // range is checked by the real native registry before any write.
+                    crops.push(c.state(block,{age:String(age)}));
+                }
             }
-            age=util.integer(age,"crop age");
-            if (age<0 || (own.call(maxAge,normalized.id) && age>maxAge[normalized.id])) { fail("Invalid age for crop "+normalized.id); }
-            crops.push(c.state(normalized,{age:String(age)}));
         }
-        var foundation=c.state(pick(o,"foundation","dirt")), farmland=c.state("farmland",{moisture:"7"}), water=c.state("water",{level:"0"});
-        var fence=c.state(pick(o,"fence","oak_fence")), gate=c.state(pick(o,"gate","oak_fence_gate"),{facing:"north",in_wall:"false",open:"false",powered:"false"});
-        var air=c.state("air"), entrance=Math.floor((w-1)/2), planted=0,u,t;
+        var foundation=c.optionState(o.foundation,"dirt"), farmland=c.material("farmland_hydrated"), water=c.material("water_source");
+        var fence=c.optionState(o.fence,"oak_fence"), gate=c.optionState(o.gate,"oak_fence_gate_north",{facing:"north"});
+        var air=c.material("air"), entrance=Math.floor((w-1)/2), planted=0,u,t;
         if ((entrance+1)%9===0) { entrance--; } // The gate must lead to soil, not an interior canal.
         c.reserve(-2,-3,-2,w+1,2,d+1); c.flatten(-2,-2,w+1,d+1,foundation,foundation,3,2);
         // An outside canal hydrates even a 1x1 plot. The outer dirt rim contains it.
@@ -338,8 +389,8 @@ exports.install = function (api, util) {
     api.build_dock = function (x,y,z,options) {
         var o=optionSet(options,["length","width","facing","deck","log","rail","pilingDepth","pilingSpacing"]);
         var length=positive(o,"length",18), width=positive(o,"width",5), depth=positive(o,"pilingDepth",4), spacing=positive(o,"pilingSpacing",4);
-        var c=context(x,y,z,o), deck=c.state(pick(o,"deck","spruce_planks")), log=c.state(pick(o,"log","spruce_log"),{axis:"y"});
-        var rail=c.state(pick(o,"rail","spruce_fence")), lantern=c.state("lantern",{hanging:"false",waterlogged:"false"}), air=c.state("air");
+        var c=context(x,y,z,o), deck=c.optionState(o.deck,"spruce_planks"), log=c.optionState(o.log,"spruce_log_y",{axis:"y"});
+        var rail=c.optionState(o.rail,"spruce_fence"), lantern=c.material("lantern_standing"), air=c.material("air");
         var left=width>=3 ? 0 : -1, right=width>=3 ? width-1 : width, t,u;
         c.reserve(left,-depth,0,right,3,length-1); c.box(left,1,0,right,3,length-1,air);
         for (t=0;t<length;t++) {

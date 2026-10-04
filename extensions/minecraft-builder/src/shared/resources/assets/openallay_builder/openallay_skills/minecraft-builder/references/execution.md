@@ -63,14 +63,18 @@ interior cell. `sync_physics` is the explicit full-region neighbor and comparato
 notification pass, including halo capture, comparison and readback. Both calls
 flush pending JS writes before their native work.
 
-Builder 0.2.0 changes the earlier behavior: `update_connections` previously also ran that
-full physics pass. Call `sync_physics` explicitly when those whole-region effects
-are required. Presets now finish with shape normalization only. The journal owns
+Call `sync_physics` explicitly when whole-region effects are required.
+Presets finish with shape normalization only. The journal owns
 explicit block/shape writes, not ordinary physics cascades. Later physics or
 external edits can change a verified postimage and produce an undo conflict.
 
 `create(backend,options)` is for deterministic tests or alternate online
 adapters. The backend contract requires JSON context/read/readPositions/write/writeRegion/readRegion/scanColumns/probeColumns,
 transformState/updateConnections/syncPhysics, status/cancel/close/undo and template storage.
-It is not an offline-save adapter. Pure detached tests demonstrate algorithms,
-not live-server permissions, loaded chunks, visual quality or loader lifecycle.
+It is not an offline-save adapter. Its context must provide the required native
+`materialPalette` roles for presets; tests must supply an explicit role fixture.
+Shared source targets SDK 0.3 and Java 8. The intended native candidate is
+Minecraft 26.2. These source targets do not establish successful compilation,
+packaging, game/loader acceptance, live-server permissions, loaded chunks,
+visual quality or loader lifecycle. Detached tests cover only their stated
+source contracts and fixture behavior.

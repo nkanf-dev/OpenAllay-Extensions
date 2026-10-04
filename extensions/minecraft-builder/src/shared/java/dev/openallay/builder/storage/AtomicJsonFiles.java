@@ -10,6 +10,7 @@ import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -20,6 +21,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Application-artifact IO only. Callers must keep this class off game-owner threads. */
 final class AtomicJsonFiles {
@@ -98,8 +101,8 @@ final class AtomicJsonFiles {
     synchronized JsonObject read(String name) throws IOException {
         Path source = path(name);
         // NOFOLLOW_LINKS avoids following a swapped final path at open time.
-        try (var channel = Files.newByteChannel(source, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
-             Reader reader = java.nio.channels.Channels.newReader(channel, StandardCharsets.UTF_8)) {
+        try (SeekableByteChannel channel = Files.newByteChannel(source, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+             Reader reader = Channels.newReader(channel, StandardCharsets.UTF_8.newDecoder(), -1)) {
             return StrictJson.read(reader);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid JSON artifact " + name, e);
@@ -119,7 +122,7 @@ final class AtomicJsonFiles {
                     StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS)) {
                 // Closing JsonWriter validates a complete document, but must leave the channel
                 // open until force has completed. Buffering bounds memory and avoids tiny writes.
-                var output = new BufferedWriter(new OutputStreamWriter(
+                BufferedWriter output = new BufferedWriter(new OutputStreamWriter(
                         new FilterOutputStream(Channels.newOutputStream(channel)) {
                             @Override public void write(byte[] bytes,int offset,int length) throws IOException {
                                 out.write(bytes,offset,length);
@@ -157,8 +160,8 @@ final class AtomicJsonFiles {
     synchronized List<String> names() throws IOException {
         checkDirectory();
         List<String> names = new ArrayList<>();
-        try (var stream = Files.list(root)) {
-            for (Path entry : stream.toList()) {
+        try (Stream<Path> stream = Files.list(root)) {
+            for (Path entry : stream.collect(Collectors.toList())) {
                 String filename = entry.getFileName().toString();
                 if (!filename.endsWith(".json")) continue;
                 String name = filename.substring(0, filename.length() - 5);
@@ -171,6 +174,6 @@ final class AtomicJsonFiles {
             }
         }
         names.sort(Comparator.naturalOrder());
-        return List.copyOf(names);
+        return StrictJson.copyList(names);
     }
 }

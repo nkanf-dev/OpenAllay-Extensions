@@ -8,9 +8,9 @@ import dev.openallay.builder.storage.BlockPosition;
 import dev.openallay.builder.storage.BlockSpec;
 import dev.openallay.builder.storage.OperationJournal;
 import dev.openallay.builder.storage.TemplateStore;
-import dev.openallay.context.DataAuthority;
-import dev.openallay.context.DataCompleteness;
-import dev.openallay.context.EvidenceMetadata;
+import dev.openallay.api.extension.ExtensionEvidence;
+import dev.openallay.api.extension.ExtensionEvidence.Authority;
+import dev.openallay.api.extension.ExtensionEvidence.Completeness;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import net.minecraft.core.BlockPos;
 
 /** Worker facade. Public values are detached JSON; Minecraft objects stay in owner actions. */
 public final class BuilderSession implements AutoCloseable {
@@ -50,7 +49,7 @@ public final class BuilderSession implements AutoCloseable {
         this.binding = binding;
         this.bridge = bridge;
         this.dispatchStart = binding.dispatches();
-        JsonObject options = JsonParser.parseString(optionsJson == null || optionsJson.isBlank() ? "{}" : optionsJson).getAsJsonObject();
+        JsonObject options = JsonParser.parseString(optionsJson == null || isBlank(optionsJson) ? "{}" : optionsJson).getAsJsonObject();
         if (options.has("dimension") && !binding.dimension().equals(options.get("dimension").getAsString()))
             throw new BuilderException("dimension_mismatch", "Requested dimension is not the active bound dimension: " + binding.dimension());
         this.label = options.has("label") ? options.get("label").getAsString() : "Builder operation";
@@ -79,7 +78,7 @@ public final class BuilderSession implements AutoCloseable {
 
     public String read(int x, int y, int z) {
         active();
-        String result = binding.call(() -> readOwner(new BlockPos(x, y, z)));
+        String result = binding.call(() -> readOwner(new BlockPosition(x, y, z)));
         reads++;
         evidence("read", 1);
         return result;
@@ -107,7 +106,7 @@ public final class BuilderSession implements AutoCloseable {
                     BlockPosition position=positions.get(start+i);
                     values.add(new Captured(position,readOwner(pos(position))));
                 }
-                return List.copyOf(values);
+                return immutableList(values);
             });
             for(Captured value:slice) {
                 if(result.length()>1)result.append(',');
@@ -122,7 +121,7 @@ public final class BuilderSession implements AutoCloseable {
         return result.append(']').toString();
     }
 
-    private String readOwner(BlockPos pos) {
+    private String readOwner(BlockPosition pos) {
         return binding.read(pos);
     }
 
@@ -145,11 +144,11 @@ public final class BuilderSession implements AutoCloseable {
                 long deadline = binding.sliceDeadline();
                 int inspected = 0;
                 while (inspected < size && (inspected == 0 || System.nanoTime() < deadline)) {
-                    BlockPos pos = bounds.at(start + inspected++);
+                    BlockPosition pos = bounds.at(start + inspected++);
                     String state = readOwner(pos);
-                    if (state != null) values.add(new Captured(new BlockPosition(pos.getX(),pos.getY(),pos.getZ()),state));
+                    if (state != null) values.add(new Captured(new BlockPosition(pos.x(),pos.y(),pos.z()),state));
                 }
-                return new CaptureBatch(List.copyOf(values),inspected);
+                return new CaptureBatch(immutableList(values),inspected);
             });
             for (Captured value : part.values()) {
                 if (!first) result.append(',');
@@ -188,7 +187,7 @@ public final class BuilderSession implements AutoCloseable {
                     .append(",\"z\":").append(cell.z()).append(",\"state\":").append(cell.state()).append('}');
         }
         paletteProvenCells+=paletteProven;
-        evidence("read-region",covered,DataCompleteness.COMPLETE,Map.of(
+        evidence("read-region",covered,Completeness.COMPLETE,details(
                 "openallay_builder:coverage","full-region;exact-canonical-air-palette-proofs-and-voxel-reads"));
         return result.append(']').toString();
     }
@@ -232,13 +231,13 @@ public final class BuilderSession implements AutoCloseable {
             observed+=slice.reads();reads+=slice.reads();
         }
         active();
-        evidence("terrain-probe",observed,partial?DataCompleteness.PARTIAL:DataCompleteness.COMPLETE);
+        evidence("terrain-probe",observed,partial?Completeness.PARTIAL:Completeness.COMPLETE);
         return result.toString();
     }
 
     public String write(int x, int y, int z, String stateJson) {
         active();
-        return writeCommands(List.of(new Change(new BlockPosition(x,y,z), stateJson)));
+        return writeCommands(java.util.Collections.singletonList(new Change(new BlockPosition(x,y,z), stateJson)));
     }
 
     /** Input array: [{x,y,z,state:{id,properties,blockEntity?}}]. */
@@ -250,7 +249,7 @@ public final class BuilderSession implements AutoCloseable {
             JsonObject change = element.getAsJsonObject();
             commands.add(new Change(new BlockPosition(BuilderBounds.integer(change,"x"), BuilderBounds.integer(change,"y"), BuilderBounds.integer(change,"z")), change.get("state").toString(),change.has("expectedBefore")?change.get("expectedBefore").toString():null));
         }
-        return writeCommands(List.copyOf(commands));
+        return writeCommands(immutableList(commands));
     }
 
     private String writeCommands(List<Change> commands) {
@@ -266,19 +265,19 @@ public final class BuilderSession implements AutoCloseable {
         List<Prepared> prepared = new ArrayList<>(commands.size());
         // Validate the entire command list before any mutation, in cooperative owner slices.
         for (int offset = 0; offset < commands.size();) {
-            List<Change> slice = List.copyOf(commands.subList(offset, Math.min(commands.size(), offset + QUANTUM)));
+            List<Change> slice = immutableList(commands.subList(offset, Math.min(commands.size(), offset + QUANTUM)));
             List<Prepared> part = binding.call(() -> {
                 List<Prepared> result = new ArrayList<>(slice.size());
                 long deadline = binding.sliceDeadline();
                 for (Change command : slice) {
                     if (!result.isEmpty() && System.nanoTime() >= deadline) break;
-                    BlockPos pos = pos(command.position());
+                    BlockPosition pos = pos(command.position());
                     String before = readOwner(pos);
                     ExpectedImage.requireUnchanged(command.expectedBefore(), before, command.position().toString());
                     String intended = binding.preview(pos, command.state());
                     result.add(new Prepared(command.position(), before, intended));
                 }
-                return List.copyOf(result);
+                return immutableList(result);
             });
             prepared.addAll(part);
             offset += part.size();
@@ -289,7 +288,7 @@ public final class BuilderSession implements AutoCloseable {
             Prepared prior = unique.get(command.position());
             unique.put(command.position(), prior == null ? command : new Prepared(command.position(), prior.before(), command.intended()));
         }
-        prepared = List.copyOf(unique.values());
+        prepared = immutableList(unique.values());
         long changed = 0;
         long verified = 0;
         try {
@@ -297,9 +296,9 @@ public final class BuilderSession implements AutoCloseable {
             state = "running";
             for (int offset = 0; offset < prepared.size(); offset += WRITE_QUANTUM) {
                 active();
-                List<Prepared> slice = List.copyOf(prepared.subList(offset, Math.min(prepared.size(), offset + WRITE_QUANTUM)));
+                List<Prepared> slice = immutableList(prepared.subList(offset, Math.min(prepared.size(), offset + WRITE_QUANTUM)));
                 operation.recordIntents(slice.stream().map(command ->
-                        new OperationJournal.Intent(command.position(), spec(command.before()), spec(command.intended()))).toList());
+                        new OperationJournal.Intent(command.position(), spec(command.before()), spec(command.intended()))).collect(java.util.stream.Collectors.toList()));
                 for (int commandOffset = 0; commandOffset < slice.size();) {
                     List<Prepared> remainingCommands = slice.subList(commandOffset,slice.size());
                     java.util.concurrent.atomic.AtomicBoolean entered = new java.util.concurrent.atomic.AtomicBoolean();
@@ -317,7 +316,7 @@ public final class BuilderSession implements AutoCloseable {
                                 Prepared command = remainingCommands.get(index);
                                 boolean attempted = false;
                                 try {
-                                    BlockPos pos = pos(command.position());
+                                    BlockPosition pos = pos(command.position());
                                     String current = readOwner(pos);
                                     ExpectedImage.requireUnchanged(command.before(), current, command.position().toString());
                                     attempted = true;
@@ -333,20 +332,25 @@ public final class BuilderSession implements AutoCloseable {
                             }
                             int processed = index;
                             if (failure != null) for (; index < remainingCommands.size(); index++) notAttempted.add(remainingCommands.get(index).position());
-                            return new AppliedBatch(List.copyOf(applied),List.copyOf(notAttempted), failure,processed);
+                            return new AppliedBatch(immutableList(applied),immutableList(notAttempted), failure,processed);
                         });
                     } catch (RuntimeException failure) {
-                        if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(remainingCommands.stream().map(Prepared::position).toList()));
+                        if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(remainingCommands.stream().map(Prepared::position).collect(java.util.stream.Collectors.toList())));
                         throw failure;
                     }
                     Map<BlockPosition,BlockSpec> readbacks = new java.util.LinkedHashMap<>();
-                    for (Applied item : result.applied()) readbacks.put(item.position(), spec(item.actual()));
+                    boolean missingReadback = false;
                     for (Applied item : result.applied()) {
-                        verified++;
+                        // A changed native write remains changed even if its image is unavailable.
+                        // Keep that durable intent pending. Never resolve it as fabricated air.
                         if (item.changed()) { changed++; writes++; }
+                        if (item.actual() == null) { missingReadback = true; continue; }
+                        readbacks.put(item.position(), spec(item.actual()));
+                        verified++;
                     }
                     OutcomePersistence.run(() -> operation.resolve(readbacks,result.notAttempted()));
                     if (result.failure() != null) throw result.failure();
+                    if (missingReadback) throw new BuilderException("unobserved_block", "Native write readback is unavailable; its journal intent remains pending");
                     commandOffset += result.processed();
                 }
             }
@@ -365,9 +369,9 @@ public final class BuilderSession implements AutoCloseable {
     public String transformState(String stateJson, int degrees, String mirror) {
         active();
         String result = binding.call(() -> binding.transform(stateJson, degrees, mirror));
-        frame.evidence(new EvidenceMetadata(DataAuthority.INTEGRATION_API, DataCompleteness.COMPLETE,
-                Instant.now(), "openallay_builder:derived-native-state", "openallay:builder", "26.2", frame.loader(),
-                Map.of("openallay_builder:coverage","input-only", "openallay_builder:operation","native-block-state-transform")));
+        frame.evidence(new ExtensionEvidence(Authority.INTEGRATION_API, Completeness.COMPLETE,
+                Instant.now(), "openallay_builder:derived-native-state", "openallay:builder", frame.gameVersion(), frame.loader(),
+                details("openallay_builder:coverage","input-only", "openallay_builder:operation","native-block-state-transform")));
         return result;
     }
 
@@ -389,13 +393,13 @@ public final class BuilderSession implements AutoCloseable {
             covered+=slice.covered();reads+=slice.voxelReads();paletteProvenCells+=slice.paletteProven();
             if(!slice.changes().isEmpty()) {
                 List<Change> changes=slice.changes().stream().map(value ->
-                        new Change(new BlockPosition(value.x(),value.y(),value.z()),value.intended(),value.before())).toList();
+                        new Change(new BlockPosition(value.x(),value.y(),value.z()),value.intended(),value.before())).collect(java.util.stream.Collectors.toList());
                 changed+=JsonParser.parseString(writeCommands(changes)).getAsJsonObject().get("changed").getAsLong();
             }
         }
         active();
-        evidence("connection-repair",covered,DataCompleteness.COMPLETE,
-                Map.of("openallay_builder:coverage","native-shapes;explicit-writes-only;no-physics-broadcast"));
+        evidence("connection-repair",covered,Completeness.COMPLETE,
+                details("openallay_builder:coverage","native-shapes;explicit-writes-only;no-physics-broadcast"));
         JsonObject result=JsonParser.parseString(receipt(changed,covered)).getAsJsonObject();
         result.addProperty("phase","connection-shapes");
         return result.toString();
@@ -409,8 +413,8 @@ public final class BuilderSession implements AutoCloseable {
             BuilderBounds bounds=connectionBounds(boundsJson);
             notifyAndReadback(bounds);
             active();
-            evidence("physics-sync",bounds.volume(),DataCompleteness.COMPLETE,
-                    Map.of("openallay_builder:journal_coverage","explicit-writes-only","openallay_builder:coverage","native-neighbor-and-comparator-notifications"));
+            evidence("physics-sync",bounds.volume(),Completeness.COMPLETE,
+                    details("openallay_builder:journal_coverage","explicit-writes-only","openallay_builder:coverage","native-neighbor-and-comparator-notifications"));
             JsonObject result=JsonParser.parseString(receipt(0,bounds.volume())).getAsJsonObject();
             result.addProperty("phase","physics-sync");
             return result.toString();
@@ -439,11 +443,11 @@ public final class BuilderSession implements AutoCloseable {
                 long deadline=binding.sliceDeadline();
                 for(int i=0;i<size;i++) {
                     if(i>0 && System.nanoTime()>=deadline) break;
-                    BlockPos pos=bounds.at(start+i);
+                    BlockPosition pos=bounds.at(start+i);
                     String before=readOwner(pos);
-                    values.add(new Prepared(new BlockPosition(pos.getX(),pos.getY(),pos.getZ()),before,before));
+                    values.add(new Prepared(new BlockPosition(pos.x(),pos.y(),pos.z()),before,before));
                 }
-                return List.copyOf(values);
+                return immutableList(values);
             });
             int count=binding.call(()->{
                 // First compare the entire admitted prefix. No callback may run
@@ -514,7 +518,7 @@ public final class BuilderSession implements AutoCloseable {
             List<OperationJournal.Entry> entries = previous.reverseEntries();
             for (int offset = 0; offset < entries.size();) {
                 active();
-                List<OperationJournal.Entry> slice = List.copyOf(entries.subList(offset,Math.min(entries.size(),offset+WRITE_QUANTUM)));
+                List<OperationJournal.Entry> slice = immutableList(entries.subList(offset,Math.min(entries.size(),offset+WRITE_QUANTUM)));
                 UndoPrepared prepared = binding.call(() -> {
                     List<Prepared> commands = new ArrayList<>();
                     List<BlockPosition> blocked = new ArrayList<>(), pending = new ArrayList<>();
@@ -524,19 +528,19 @@ public final class BuilderSession implements AutoCloseable {
                         if (inspected > 0 && System.nanoTime() >= deadline) break;
                         inspected++;
                         if (entry.pending()) { pending.add(entry.position()); continue; }
-                        BlockPos pos = pos(entry.position());
+                        BlockPosition pos = pos(entry.position());
                         String current = readOwner(pos);
                         if (!entry.check(spec(current)).matches()) { blocked.add(entry.position()); continue; }
                         commands.add(new Prepared(entry.position(),current,binding.preview(pos,entry.before().toJsonString())));
                     }
-                    return new UndoPrepared(List.copyOf(commands),List.copyOf(blocked),List.copyOf(pending),inspected);
+                    return new UndoPrepared(immutableList(commands),immutableList(blocked),immutableList(pending),inspected);
                 });
                 offset += prepared.inspected();
                 prepared.conflicts().forEach(position -> conflicts.add(position(pos(position))));
                 prepared.uncertain().forEach(position -> uncertain.add(position(pos(position))));
                 if (prepared.commands().isEmpty()) continue;
                 operation.recordIntents(prepared.commands().stream().map(command ->
-                        new OperationJournal.Intent(command.position(),spec(command.before()),spec(command.intended()))).toList());
+                        new OperationJournal.Intent(command.position(),spec(command.before()),spec(command.intended()))).collect(java.util.stream.Collectors.toList()));
                 for (int commandOffset = 0; commandOffset < prepared.commands().size();) {
                     List<Prepared> commands = prepared.commands().subList(commandOffset,prepared.commands().size());
                     java.util.concurrent.atomic.AtomicBoolean entered = new java.util.concurrent.atomic.AtomicBoolean();
@@ -554,7 +558,7 @@ public final class BuilderSession implements AutoCloseable {
                                 Prepared command = commands.get(index);
                                 boolean attempted = false;
                                 try {
-                                    BlockPos pos = pos(command.position());
+                                    BlockPosition pos = pos(command.position());
                                     String current = readOwner(pos);
                                     if (!spec(command.before()).equals(spec(current))) {
                                         unstarted.add(command.position()); races.add(command.position()); continue;
@@ -573,18 +577,24 @@ public final class BuilderSession implements AutoCloseable {
                             // On a cooperative yield, remaining durable intents stay pending.
                             // On failure, explicitly withdraw only commands proven unstarted.
                             if (failure != null) for (; index < commands.size(); index++) unstarted.add(commands.get(index).position());
-                            return new UndoApplied(List.copyOf(outcomes),List.copyOf(unstarted),List.copyOf(races),failure,processed);
+                            return new UndoApplied(immutableList(outcomes),immutableList(unstarted),immutableList(races),failure,processed);
                         });
                     } catch (RuntimeException failure) {
-                        if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(commands.stream().map(Prepared::position).toList()));
+                        if (!entered.get()) OutcomePersistence.run(() -> operation.abortIntents(commands.stream().map(Prepared::position).collect(java.util.stream.Collectors.toList())));
                         throw failure;
                     }
                     Map<BlockPosition,BlockSpec> actual = new java.util.LinkedHashMap<>();
-                    for (Applied item : applied.applied()) actual.put(item.position(),spec(item.actual()));
+                    boolean missingReadback = false;
+                    for (Applied item : applied.applied()) {
+                        if (item.changed()) writes++;
+                        if (item.actual() == null) { missingReadback = true; continue; }
+                        actual.put(item.position(),spec(item.actual()));
+                        restored++;
+                    }
                     applied.conflicts().forEach(position -> conflicts.add(position(pos(position))));
-                    for (Applied item : applied.applied()) { restored++; if (item.changed()) writes++; }
                     OutcomePersistence.run(() -> operation.resolve(actual,applied.unstarted()));
                     if (applied.failure() != null) throw applied.failure();
+                    if (missingReadback) throw new BuilderException("unobserved_block", "Native undo readback is unavailable; its journal intent remains pending");
                     commandOffset += applied.processed();
                 }
             }
@@ -601,12 +611,12 @@ public final class BuilderSession implements AutoCloseable {
         try {
             JsonArray result = new JsonArray();
             java.util.Optional<String> worldId = binding.existingWorldId();
-            if (worldId.isEmpty()) {
+            if (!worldId.isPresent()) {
                 artifactEvidence("operation-list", 0);
                 return result.toString();
             }
             for (OperationJournal.Snapshot item : journal.list()) {
-                if (!item.worldId().equals(worldId.orElseThrow()) || !item.dimension().equals(binding.dimension())) continue;
+                if (!item.worldId().equals(worldId.get()) || !item.dimension().equals(binding.dimension())) continue;
                 JsonObject record = new JsonObject(); record.addProperty("id", item.id()); record.addProperty("label", item.label()); record.addProperty("status", item.status().name().toLowerCase()); record.addProperty("entries", item.entries().size()); result.add(record);
             }
             artifactEvidence("operation-list", result.size());
@@ -674,9 +684,9 @@ public final class BuilderSession implements AutoCloseable {
         try { OutcomePersistence.run(() -> operation.finish(terminal,message)); lastOperation = operation.id(); operation = null; }
         catch (IOException failure) { throw io(failure); }
     }
-    private void evidence(String action, long count) { evidence(action,count,DataCompleteness.COMPLETE); }
-    private void evidence(String action, long count, DataCompleteness completeness) { evidence(action,count,completeness,Map.of()); }
-    private void evidence(String action, long count, DataCompleteness completeness,Map<String,String> extra) {
+    private void evidence(String action, long count) { evidence(action,count,Completeness.COMPLETE); }
+    private void evidence(String action, long count, Completeness completeness) { evidence(action,count,completeness,details()); }
+    private void evidence(String action, long count, Completeness completeness,Map<String,String> extra) {
         boolean sliced = action.equals("terrain-probe") || action.equals("read-region") || action.equals("read-positions") || action.equals("terrain-scan") || action.equals("physics-sync") || action.equals("write-readback") || action.equals("undo-readback") || action.equals("connection-repair");
         Instant capturedAt=Instant.now();
         Map<String,String> details=new java.util.LinkedHashMap<>();
@@ -686,32 +696,266 @@ public final class BuilderSession implements AutoCloseable {
         if(action.equals("connection-repair")) details.put("openallay_builder:journal_coverage","explicit-writes-only");
         if(action.equals("terrain-probe")) details.put("openallay_builder:coverage","physical-successful-reads;column-local-errors-deferred");
         details.putAll(extra);
-        frame.evidence(new EvidenceMetadata(DataAuthority.SERVER_AUTHORITATIVE, completeness,
-                capturedAt, "openallay_builder:"+action, "openallay:builder", "26.2", frame.loader(),details));
+        frame.evidence(new ExtensionEvidence(Authority.SERVER_AUTHORITATIVE, completeness,
+                capturedAt, "openallay_builder:"+action, "openallay:builder", frame.gameVersion(), frame.loader(),details));
     }
     private void artifactEvidence(String action, long count) {
-        frame.evidence(new EvidenceMetadata(DataAuthority.INTEGRATION_API, DataCompleteness.COMPLETE,
-                Instant.now(), "openallay_builder:"+action, "openallay:builder", "26.2", frame.loader(),
-                Map.of("openallay_builder:storage","extension-artifacts", "openallay_builder:count",Long.toString(count))));
+        frame.evidence(new ExtensionEvidence(Authority.INTEGRATION_API, Completeness.COMPLETE,
+                Instant.now(), "openallay_builder:"+action, "openallay:builder", frame.gameVersion(), frame.loader(),
+                details("openallay_builder:storage","extension-artifacts", "openallay_builder:count",Long.toString(count))));
     }
     private String receipt(long changed,long verified) {
         JsonObject result = new JsonObject(); result.addProperty("changed",changed); result.addProperty("verified",verified);
         if (operation != null) result.addProperty("operationId",operation.id()); return result.toString();
     }
-    private static JsonObject position(BlockPos pos) { JsonObject result = new JsonObject(); result.addProperty("x",pos.getX()); result.addProperty("y",pos.getY()); result.addProperty("z",pos.getZ()); return result; }
-    private static BlockPos pos(BlockPosition pos) { return new BlockPos(pos.x(),pos.y(),pos.z()); }
+    private static JsonObject position(BlockPosition pos) { JsonObject result = new JsonObject(); result.addProperty("x",pos.x()); result.addProperty("y",pos.y()); result.addProperty("z",pos.z()); return result; }
+    private static BlockPosition pos(BlockPosition pos) { return pos; }
     private static BlockSpec spec(String value) { return BlockSpec.fromJson(value); }
     private static BuilderException io(IOException failure) {
         return new BuilderException("artifact_io", "Builder artifact/journal persistence failed", failure);
     }
-    private record Captured(BlockPosition position,String state) {}
-    private record CaptureBatch(List<Captured> values,int inspected) {}
-    private record Change(BlockPosition position,String state,String expectedBefore) {
-        Change(BlockPosition position,String state) { this(position,state,null); }
+    private static <T> List<T> immutableList(java.util.Collection<? extends T> values) {
+        List<T> copy = new ArrayList<T>(values.size());
+        for (T value : values) copy.add(java.util.Objects.requireNonNull(value, "element"));
+        return java.util.Collections.unmodifiableList(copy);
     }
-    private record Prepared(BlockPosition position,String before,String intended) {}
-    private record Applied(BlockPosition position,String actual,boolean changed) {}
-    private record AppliedBatch(List<Applied> applied,List<BlockPosition> notAttempted, RuntimeException failure,int processed) {}
-    private record UndoPrepared(List<Prepared> commands,List<BlockPosition> conflicts,List<BlockPosition> uncertain,int inspected) {}
-    private record UndoApplied(List<Applied> applied,List<BlockPosition> unstarted,List<BlockPosition> conflicts,RuntimeException failure,int processed) {}
+    private static Map<String,String> details(String... values) {
+        Map<String,String> map = new java.util.LinkedHashMap<String,String>();
+        for (int i = 0; i < values.length; i += 2) map.put(values[i], values[i + 1]);
+        return java.util.Collections.unmodifiableMap(map);
+    }
+    private static boolean isBlank(String value) {
+        for (int i = 0; i < value.length();) {
+            int codePoint = value.codePointAt(i);
+            if (!Character.isWhitespace(codePoint)) return false;
+            i += Character.charCount(codePoint);
+        }
+        return true;
+    }
+
+    private static final class Captured {
+        private final BlockPosition position;
+        private final String state;
+        Captured(BlockPosition position, String state) {
+            this.position = position;
+            this.state = state;
+        }
+        BlockPosition position() { return position; }
+        String state() { return state; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Captured)) return false;
+            Captured that = (Captured) other;
+            return java.util.Objects.equals(position, that.position) && java.util.Objects.equals(state, that.state);
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(position);
+            hash = 31 * hash + java.util.Objects.hashCode(state);
+            return hash;
+        }
+        @Override public String toString() { return "Captured[position=" + position + ", state=" + state + "]"; }
+    }
+    private static final class CaptureBatch {
+        private final List<Captured> values;
+        private final int inspected;
+        CaptureBatch(List<Captured> values, int inspected) {
+            this.values = values;
+            this.inspected = inspected;
+        }
+        List<Captured> values() { return values; }
+        int inspected() { return inspected; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof CaptureBatch)) return false;
+            CaptureBatch that = (CaptureBatch) other;
+            return java.util.Objects.equals(values, that.values) && inspected == that.inspected;
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(values);
+            hash = 31 * hash + Integer.hashCode(inspected);
+            return hash;
+        }
+        @Override public String toString() { return "CaptureBatch[values=" + values + ", inspected=" + inspected + "]"; }
+    }
+    private static final class Change {
+        private final BlockPosition position;
+        private final String state;
+        private final String expectedBefore;
+        Change(BlockPosition position, String state, String expectedBefore) {
+            this.position = position;
+            this.state = state;
+            this.expectedBefore = expectedBefore;
+        }
+        Change(BlockPosition position, String state) { this(position, state, null); }
+        BlockPosition position() { return position; }
+        String state() { return state; }
+        String expectedBefore() { return expectedBefore; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Change)) return false;
+            Change that = (Change) other;
+            return java.util.Objects.equals(position, that.position) && java.util.Objects.equals(state, that.state) && java.util.Objects.equals(expectedBefore, that.expectedBefore);
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(position);
+            hash = 31 * hash + java.util.Objects.hashCode(state);
+            hash = 31 * hash + java.util.Objects.hashCode(expectedBefore);
+            return hash;
+        }
+        @Override public String toString() { return "Change[position=" + position + ", state=" + state + ", expectedBefore=" + expectedBefore + "]"; }
+    }
+    private static final class Prepared {
+        private final BlockPosition position;
+        private final String before;
+        private final String intended;
+        Prepared(BlockPosition position, String before, String intended) {
+            this.position = position;
+            this.before = before;
+            this.intended = intended;
+        }
+        BlockPosition position() { return position; }
+        String before() { return before; }
+        String intended() { return intended; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Prepared)) return false;
+            Prepared that = (Prepared) other;
+            return java.util.Objects.equals(position, that.position) && java.util.Objects.equals(before, that.before) && java.util.Objects.equals(intended, that.intended);
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(position);
+            hash = 31 * hash + java.util.Objects.hashCode(before);
+            hash = 31 * hash + java.util.Objects.hashCode(intended);
+            return hash;
+        }
+        @Override public String toString() { return "Prepared[position=" + position + ", before=" + before + ", intended=" + intended + "]"; }
+    }
+    private static final class Applied {
+        private final BlockPosition position;
+        private final String actual;
+        private final boolean changed;
+        Applied(BlockPosition position, String actual, boolean changed) {
+            this.position = position;
+            this.actual = actual;
+            this.changed = changed;
+        }
+        BlockPosition position() { return position; }
+        String actual() { return actual; }
+        boolean changed() { return changed; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Applied)) return false;
+            Applied that = (Applied) other;
+            return java.util.Objects.equals(position, that.position) && java.util.Objects.equals(actual, that.actual) && changed == that.changed;
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(position);
+            hash = 31 * hash + java.util.Objects.hashCode(actual);
+            hash = 31 * hash + Boolean.hashCode(changed);
+            return hash;
+        }
+        @Override public String toString() { return "Applied[position=" + position + ", actual=" + actual + ", changed=" + changed + "]"; }
+    }
+    private static final class AppliedBatch {
+        private final List<Applied> applied;
+        private final List<BlockPosition> notAttempted;
+        private final RuntimeException failure;
+        private final int processed;
+        AppliedBatch(List<Applied> applied, List<BlockPosition> notAttempted, RuntimeException failure, int processed) {
+            this.applied = applied;
+            this.notAttempted = notAttempted;
+            this.failure = failure;
+            this.processed = processed;
+        }
+        List<Applied> applied() { return applied; }
+        List<BlockPosition> notAttempted() { return notAttempted; }
+        RuntimeException failure() { return failure; }
+        int processed() { return processed; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof AppliedBatch)) return false;
+            AppliedBatch that = (AppliedBatch) other;
+            return java.util.Objects.equals(applied, that.applied) && java.util.Objects.equals(notAttempted, that.notAttempted) && java.util.Objects.equals(failure, that.failure) && processed == that.processed;
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(applied);
+            hash = 31 * hash + java.util.Objects.hashCode(notAttempted);
+            hash = 31 * hash + java.util.Objects.hashCode(failure);
+            hash = 31 * hash + Integer.hashCode(processed);
+            return hash;
+        }
+        @Override public String toString() { return "AppliedBatch[applied=" + applied + ", notAttempted=" + notAttempted + ", failure=" + failure + ", processed=" + processed + "]"; }
+    }
+    private static final class UndoPrepared {
+        private final List<Prepared> commands;
+        private final List<BlockPosition> conflicts;
+        private final List<BlockPosition> uncertain;
+        private final int inspected;
+        UndoPrepared(List<Prepared> commands, List<BlockPosition> conflicts, List<BlockPosition> uncertain, int inspected) {
+            this.commands = commands;
+            this.conflicts = conflicts;
+            this.uncertain = uncertain;
+            this.inspected = inspected;
+        }
+        List<Prepared> commands() { return commands; }
+        List<BlockPosition> conflicts() { return conflicts; }
+        List<BlockPosition> uncertain() { return uncertain; }
+        int inspected() { return inspected; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof UndoPrepared)) return false;
+            UndoPrepared that = (UndoPrepared) other;
+            return java.util.Objects.equals(commands, that.commands) && java.util.Objects.equals(conflicts, that.conflicts) && java.util.Objects.equals(uncertain, that.uncertain) && inspected == that.inspected;
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(commands);
+            hash = 31 * hash + java.util.Objects.hashCode(conflicts);
+            hash = 31 * hash + java.util.Objects.hashCode(uncertain);
+            hash = 31 * hash + Integer.hashCode(inspected);
+            return hash;
+        }
+        @Override public String toString() { return "UndoPrepared[commands=" + commands + ", conflicts=" + conflicts + ", uncertain=" + uncertain + ", inspected=" + inspected + "]"; }
+    }
+    private static final class UndoApplied {
+        private final List<Applied> applied;
+        private final List<BlockPosition> unstarted;
+        private final List<BlockPosition> conflicts;
+        private final RuntimeException failure;
+        private final int processed;
+        UndoApplied(List<Applied> applied, List<BlockPosition> unstarted, List<BlockPosition> conflicts, RuntimeException failure, int processed) {
+            this.applied = applied;
+            this.unstarted = unstarted;
+            this.conflicts = conflicts;
+            this.failure = failure;
+            this.processed = processed;
+        }
+        List<Applied> applied() { return applied; }
+        List<BlockPosition> unstarted() { return unstarted; }
+        List<BlockPosition> conflicts() { return conflicts; }
+        RuntimeException failure() { return failure; }
+        int processed() { return processed; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof UndoApplied)) return false;
+            UndoApplied that = (UndoApplied) other;
+            return java.util.Objects.equals(applied, that.applied) && java.util.Objects.equals(unstarted, that.unstarted) && java.util.Objects.equals(conflicts, that.conflicts) && java.util.Objects.equals(failure, that.failure) && processed == that.processed;
+        }
+        @Override public int hashCode() {
+            int hash = 0;
+            hash = 31 * hash + java.util.Objects.hashCode(applied);
+            hash = 31 * hash + java.util.Objects.hashCode(unstarted);
+            hash = 31 * hash + java.util.Objects.hashCode(conflicts);
+            hash = 31 * hash + java.util.Objects.hashCode(failure);
+            hash = 31 * hash + Integer.hashCode(processed);
+            return hash;
+        }
+        @Override public String toString() { return "UndoApplied[applied=" + applied + ", unstarted=" + unstarted + ", conflicts=" + conflicts + ", failure=" + failure + ", processed=" + processed + "]"; }
+    }
 }

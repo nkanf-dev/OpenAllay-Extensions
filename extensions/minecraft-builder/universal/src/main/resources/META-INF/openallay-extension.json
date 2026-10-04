@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "id": "openallay:builder",
+  "name": "Minecraft Builder",
+  "version": "${version}",
+  "entrypoint": "dev.openallay.builder.BuilderExtension",
+  "provider": "OpenAllay",
+  "summary": "Full online construction for the active integrated Minecraft server.",
+  "source": "https://github.com/nkanf-dev/OpenAllay-Extensions",
+  "support": {
+    "targets": [
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "26.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.3.0,0.4.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "26.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.3.0,0.4.0)"
+      }
+    ],
+    "minimumJavaVersion": 8,
+    "requiredHostFeatures": [
+      "minecraft:world-access"
+    ],
+    "validatedTargetIds": []
+  },
+  "requirements": {
+    "capabilities": [
+      "openallay_builder:world_write"
+    ],
+    "extensions": [],
+    "skills": []
+  }
+}

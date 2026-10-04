@@ -10,10 +10,16 @@ return b.context();
 explains that no offline save path is accepted. No Python or Amulet dependency
 is needed. `create(backend, options)` injects a detached backend for tests.
 
-`b.context()` returns the dimension, version, dataVersion, player, minY and
-maxY. minY is inclusive; maxY is exclusive. `get_player_pos()` and
-`detect_version()` are convenience views. Positions are finite signed 32-bit
-integers. Bounds in shape APIs include both endpoints and normalize reversal.
+`b.context()` returns the dimension, version, dataVersion, player, minY,
+maxY and `materialPalette`. minY is inclusive; maxY is exclusive.
+`materialPalette` is an object of semantic role names to canonical native
+BlockSpec JSON objects, not ID strings. Each supplied role is decoded and
+encoded against the connected registry, including its exact properties.
+Presets request these roles before writes. An absent required role raises
+`material_unavailable`; the shared source never guesses a replacement from a
+game-version string. `get_player_pos()` and `detect_version()` are convenience
+views. Positions are finite signed 32-bit integers. Bounds in shape APIs include
+both endpoints and normalize reversal.
 
 - `place_block(x,y,z, block, properties?)` writes a BlockSpec or ID.
 - `get_block(x,y,z)` returns a full namespaced ID.
@@ -52,9 +58,11 @@ Unobserved or unloaded cells are errors, never implicit air.
 Unqualified IDs gain `minecraft:`. Qualified IDs, including modded namespaces,
 remain unchanged. `_fix_block_name(id)` and `BLOCK_ALIASES` expose the eleven
 convenience aliases: tulip_red/orange/pink/white, oak_plank, spruce_plank,
-birch_plank, dark_oak_plank, stone_brick, cobble and wood.
+birch_plank, dark_oak_plank, stone_brick, cobble and wood. These aliases are
+not applied to custom preset materials: an unqualified custom preset ID only
+gains `minecraft:` and then receives exact native registry validation.
 `FLOWERS`, `POTTED_FLOWERS`, `NATURAL_GROUND`, and `BUILDING_BLOCKS` contain
-qualified palette IDs. These are convenience data, not native registry rules.
+qualified convenience IDs, not registry or cross-version support guarantees.
 
 ## Batch custom loops
 

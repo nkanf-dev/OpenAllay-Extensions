@@ -1,18 +1,20 @@
 package dev.openallay.builder;
 
-import static dev.openallay.extension.JavascriptHostValueType.INTEGER;
-import static dev.openallay.extension.JavascriptHostValueType.STRING;
+import static dev.openallay.api.extension.JavascriptHostValueType.INTEGER;
+import static dev.openallay.api.extension.JavascriptHostValueType.STRING;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonPrimitive;
-import dev.openallay.extension.ExtensionCapability;
-import dev.openallay.extension.JavascriptHostBinding;
-import dev.openallay.extension.JavascriptHostMethod;
-import dev.openallay.extension.JavascriptHostValueType;
-import dev.openallay.extension.JavascriptInvocationContext;
-import dev.openallay.script.JavascriptExecutionException;
+import dev.openallay.api.extension.ExtensionCapability;
+import dev.openallay.api.extension.JavascriptHostBinding;
+import dev.openallay.api.extension.JavascriptHostMethod;
+import dev.openallay.api.extension.JavascriptHostValueType;
+import dev.openallay.api.extension.ExtensionInvocation;
+import dev.openallay.api.extension.ExtensionException;
 import java.util.List;
+import java.util.Arrays;
+import java.util.Collections;
+import com.google.gson.JsonParser;
 import java.util.Set;
 
 /** Detached public methods; native world-write authority is never inherited by the Agent. */
@@ -28,7 +30,7 @@ final class BuilderBindings {
     }
 
     static JavascriptHostBinding binding() {
-        return new JavascriptHostBinding(MODULE, List.of(
+        return new JavascriptHostBinding(MODULE, Arrays.asList(
                 method("open", false, (context, args) -> text(BuilderRuntime.open(context, string(args, 0))), STRING),
                 method("context", false, (context, args) -> text(session(context, args).context()), STRING),
                 method("read", false, (context, args) -> text(session(context, args).read(integer(args, 1), integer(args, 2), integer(args, 3))), STRING, INTEGER, INTEGER, INTEGER),
@@ -58,62 +60,109 @@ final class BuilderBindings {
 
     private static JavascriptHostMethod method(String name, boolean write,
             JavascriptHostMethod.Invoker invoker, JavascriptHostValueType... parameters) {
-        Set<String> capabilities = write ? Set.of(WORLD_WRITE) : Set.of();
-        return new JavascriptHostMethod(name, List.of(parameters), JavascriptHostValueType.STRING,
+        Set<String> capabilities = write ? Collections.singleton(WORLD_WRITE) : Collections.<String>emptySet();
+        return new JavascriptHostMethod(name, Arrays.asList(parameters), JavascriptHostValueType.STRING,
                 capabilities, (context, args) -> {
                     context.requireActive();
                     // The public bridge also gates this method; keep the native handler's own gate.
                     if (write) context.requireCapability(WORLD_WRITE);
                     try { return invoker.invoke(context, args); }
                     catch (BuilderException failure) { throw publicFailure(failure); }
+                    catch (ExtensionException failure) { throw publicFailure(new BuilderException(failure.code(), "Native host operation failed")); }
+                    catch (RuntimeException failure) { throw new ExtensionException("builder_failure", "Builder operation failed; inspect the session status"); }
                 });
     }
 
     private static JavascriptHostMethod voidMethod(String name, VoidInvoker invoker, JavascriptHostValueType... parameters) {
-        return new JavascriptHostMethod(name, List.of(parameters), JavascriptHostValueType.NULL, Set.of(),
+        return new JavascriptHostMethod(name, Arrays.asList(parameters), JavascriptHostValueType.NULL, Collections.<String>emptySet(),
                 (context, args) -> {
                     context.requireActive();
-                    try { invoker.invoke(context, args); return JsonNull.INSTANCE; }
+                    try { invoker.invoke(context, args); return "null"; }
                     catch (BuilderException failure) { throw publicFailure(failure); }
+                    catch (ExtensionException failure) { throw publicFailure(new BuilderException(failure.code(), "Native host operation failed")); }
+                    catch (RuntimeException failure) { throw new ExtensionException("builder_failure", "Builder operation failed; inspect the session status"); }
                 });
     }
 
-    private static JavascriptExecutionException publicFailure(BuilderException failure) {
-        String message = switch (failure.code()) {
-            case "unsupported_topology" -> "Builder requires the active integrated server; remote-server writes are unavailable";
-            case "player_required" -> "Builder requires the exact local player invocation";
-            case "chunk_unavailable" -> "The requested chunk is not loaded; Builder does not generate chunks";
-            case "stale_session" -> "The exact player, connection, server or dimension binding changed";
-            case "session_required", "invocation_required" -> "Builder session is not owned by this active invocation";
-            case "session_closed" -> "Builder session is closed or cancelled";
-            case "concurrent_edit" -> "A block changed after capture; Builder did not overwrite the conflicting image";
-            case "wrong_world", "dimension_mismatch" -> "The requested world or dimension does not match the active Builder session";
-            case "invalid_argument", "invalid_bounds", "invalid_coordinate" -> "Builder requires valid bounds and exact 32-bit coordinates";
-            case "invalid_block_entity", "missing_block_entity" -> "The native block-entity payload is invalid or unavailable";
-            case "unsupported_opaque_block_entity_transform" -> "The opaque block-entity payload cannot be transformed safely";
-            case "placement_failed" -> "Native placement failed; inspect Builder status for verified partial progress";
-            case "unobserved_block" -> "The requested block has not been observed";
-            case "operation_required", "operation_terminal" -> "The requested Builder operation is unavailable or terminal";
-            case "artifact_io" -> "Builder template or journal persistence failed";
-            case "wrong_owner", "wrong_worker", "owner_thread_wait", "nested_invocation" -> "Builder rejected an invalid native execution owner";
-            default -> "Builder native operation failed; inspect the session status";
-        };
+    private static ExtensionException publicFailure(BuilderException failure) {
+        String message;
+        switch (failure.code()) {
+            case "unsupported_topology":
+                message = "Builder requires the active integrated server; remote-server writes are unavailable"; break;
+            case "player_required":
+                message = "Builder requires the exact local player invocation"; break;
+            case "chunk_unavailable":
+                message = "The requested chunk is not loaded; Builder does not generate chunks"; break;
+            case "stale_session":
+                message = "The exact player, connection, server or dimension binding changed"; break;
+            case "session_required":
+            case "invocation_required":
+                message = "Builder session is not owned by this active invocation"; break;
+            case "session_closed":
+                message = "Builder session is closed or cancelled"; break;
+            case "concurrent_edit":
+                message = "A block changed after capture; Builder did not overwrite the conflicting image"; break;
+            case "wrong_world":
+            case "dimension_mismatch":
+                message = "The requested world or dimension does not match the active Builder session"; break;
+            case "invalid_argument":
+            case "invalid_bounds":
+            case "invalid_coordinate":
+                message = "Builder requires valid bounds and exact 32-bit coordinates"; break;
+            case "invalid_block_entity":
+            case "missing_block_entity":
+                message = "The native block-entity payload is invalid or unavailable"; break;
+            case "unsupported_opaque_block_entity_transform":
+                message = "The opaque block-entity payload cannot be transformed safely"; break;
+            case "material_unavailable":
+                message = "This world does not provide the material role required by this preset; choose available materials"; break;
+            case "world_access_unavailable":
+                message = "This host does not provide Minecraft world access"; break;
+            case "placement_failed":
+                message = "Native placement failed; inspect Builder status for verified partial progress"; break;
+            case "unobserved_block":
+                message = "The requested block has not been observed"; break;
+            case "operation_required":
+            case "operation_terminal":
+                message = "The requested Builder operation is unavailable or terminal"; break;
+            case "artifact_io":
+                message = "Builder template or journal persistence failed"; break;
+            case "wrong_owner":
+            case "wrong_worker":
+            case "owner_thread_wait":
+            case "nested_invocation":
+                message = "Builder rejected an invalid native execution owner"; break;
+            default:
+                message = "Builder native operation failed; inspect the session status"; break;
+        }
         // No foreign message, stack or cause crosses the JavaScript host boundary.
-        return new JavascriptExecutionException(failure.code(), message);
+        return new ExtensionException(failure.code(), message);
     }
 
-    private static BuilderSession session(JavascriptInvocationContext context, List<JsonElement> args) {
+    private static BuilderSession session(ExtensionInvocation context, List<String> args) {
         return BuilderRuntime.session(context, string(args, 0));
     }
-    private static String string(List<JsonElement> args, int index) { return args.get(index).getAsString(); }
-    private static int integer(List<JsonElement> args, int index) {
-        try { return args.get(index).getAsBigDecimal().intValueExact(); }
-        catch (ArithmeticException invalid) {
+    private static JsonElement argument(List<String> args, int index) {
+        try { return JsonParser.parseString(args.get(index)); }
+        catch (RuntimeException invalid) { throw new BuilderException("invalid_argument", "Builder requires exact JSON arguments", invalid); }
+    }
+    private static String string(List<String> args, int index) {
+        JsonElement value = argument(args, index);
+        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString())
+            throw new BuilderException("invalid_argument", "Builder requires a JSON string argument");
+        return value.getAsString();
+    }
+    private static int integer(List<String> args, int index) {
+        JsonElement value = argument(args, index);
+        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber())
+            throw new BuilderException("invalid_argument", "Builder coordinates and rotations must be JSON numbers");
+        try { return value.getAsBigDecimal().intValueExact(); }
+        catch (ArithmeticException | NumberFormatException invalid) {
             throw new BuilderException("invalid_argument", "Builder coordinates and rotations must be 32-bit integers", invalid);
         }
     }
-    private static JsonPrimitive text(String value) { return new JsonPrimitive(value); }
+    private static String text(String value) { return new JsonPrimitive(value).toString(); }
     @FunctionalInterface private interface VoidInvoker {
-        void invoke(JavascriptInvocationContext context, List<JsonElement> args);
+        void invoke(ExtensionInvocation context, List<String> args);
     }
 }

@@ -1,5 +1,28 @@
 # Authoring an OpenAllay Extension
 
+## Native-neutral API 0.3.0
+
+New portable Extensions can compile against the standalone Java-8
+`dev.openallay:openallay-extension-api:0.3.0` SDK. Implement
+`dev.openallay.api.extension.OpenAllayExtension` with a public no-argument constructor,
+keep game and loader classes out of the payload, and package one self-contained JAR.
+The core discovers its explicit schema-2 entrypoint at startup from
+`config/openallay/extensions/`, not `mods/`.
+
+The support declaration is an explicit union of loader/game/core/API coordinates,
+minimum Java version and required host features. Validation labels and advisory
+requirements are separate from compatibility and permission grants. Do not widen
+ranges based only on Java-8 bytecode or assume an old game's native APIs exist.
+See the [core universal Extension contract](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/universal-extensions.md)
+and the [one Builder payload](../extensions/minecraft-builder/README.md) for exact
+schema, invocation, JSON and native world-port boundaries.
+
+## Existing loader-mod API 0.2.x
+
+The remainder describes the independently released legacy API and package contract.
+It remains valid only for the versions and loader coordinates declared by that
+Extension. It is not the packaging path for a new universal API 0.3.0 payload.
+
 An OpenAllay Extension is an ordinary Fabric or NeoForge mod. The loader creates
 your entrypoint, your entrypoint registers one immutable declaration, and
 OpenAllay validates the declaration before publishing any contribution.

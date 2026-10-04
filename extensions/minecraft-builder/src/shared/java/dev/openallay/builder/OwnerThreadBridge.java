@@ -1,5 +1,6 @@
 package dev.openallay.builder;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -11,14 +12,79 @@ import java.util.function.BooleanSupplier;
 
 /** Only Java-owned actions reach game executors. No JavaScript callback crosses this boundary. */
 final class OwnerThreadBridge implements AutoCloseable {
-    record Owner(Executor executor, BooleanSupplier isOwnerThread, Runnable validate) {}
+    static final class Owner {
+        private final Executor executor;
+        private final BooleanSupplier isOwnerThread;
+        private final Runnable validate;
+
+        Owner(Executor executor, BooleanSupplier isOwnerThread, Runnable validate) {
+            this.executor = executor;
+            this.isOwnerThread = isOwnerThread;
+            this.validate = validate;
+        }
+
+        public Executor executor() { return executor; }
+        public BooleanSupplier isOwnerThread() { return isOwnerThread; }
+        public Runnable validate() { return validate; }
+
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Owner)) return false;
+            Owner value = (Owner) other;
+            return Objects.equals(executor, value.executor)
+                    && Objects.equals(isOwnerThread, value.isOwnerThread)
+                    && Objects.equals(validate, value.validate);
+        }
+
+        @Override public int hashCode() {
+            int result = 0;
+            result = 31 * result + Objects.hashCode(executor);
+            result = 31 * result + Objects.hashCode(isOwnerThread);
+            result = 31 * result + Objects.hashCode(validate);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "Owner[executor=" + executor + ", isOwnerThread=" + isOwnerThread + ", validate=" + validate + "]";
+        }
+    }
     private final Thread worker = Thread.currentThread();
     private final Runnable requireActive;
     private final java.util.concurrent.atomic.AtomicLong dispatches = new java.util.concurrent.atomic.AtomicLong();
     private final BooleanSupplier anyOwnerThread;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Set<Pending<?>> pending = ConcurrentHashMap.newKeySet();
-    private record Pending<T>(CompletableFuture<T> future, AtomicBoolean claimed) {}
+    private static final class Pending<T> {
+        private final CompletableFuture<T> future;
+        private final AtomicBoolean claimed;
+
+        Pending(CompletableFuture<T> future, AtomicBoolean claimed) {
+            this.future = future;
+            this.claimed = claimed;
+        }
+
+        public CompletableFuture<T> future() { return future; }
+        public AtomicBoolean claimed() { return claimed; }
+
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Pending)) return false;
+            Pending<?> value = (Pending<?>) other;
+            return Objects.equals(future, value.future)
+                    && Objects.equals(claimed, value.claimed);
+        }
+
+        @Override public int hashCode() {
+            int result = 0;
+            result = 31 * result + Objects.hashCode(future);
+            result = 31 * result + Objects.hashCode(claimed);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "Pending[future=" + future + ", claimed=" + claimed + "]";
+        }
+    }
 
     OwnerThreadBridge(Runnable requireActive, BooleanSupplier anyOwnerThread) {
         this.requireActive = requireActive;
@@ -88,8 +154,8 @@ final class OwnerThreadBridge implements AutoCloseable {
         checkActive();
     }
     private static RuntimeException propagate(Throwable cause) {
-        if (cause instanceof RuntimeException runtime) return runtime;
-        if (cause instanceof Error error) throw error;
+        if (cause instanceof RuntimeException) return (RuntimeException) cause;
+        if (cause instanceof Error) throw (Error) cause;
         return new BuilderException("native_failure", "Native action failed", cause);
     }
 

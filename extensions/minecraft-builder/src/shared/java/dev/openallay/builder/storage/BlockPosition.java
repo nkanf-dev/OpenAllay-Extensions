@@ -4,7 +4,41 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 
 /** Detached coordinates. Template positions are relative; journal positions are absolute. */
-public record BlockPosition(int x, int y, int z) {
+public final class BlockPosition {
+    private final int x;
+    private final int y;
+    private final int z;
+
+    public BlockPosition(int x, int y, int z) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+
+    public int x() { return x; }
+    public int y() { return y; }
+    public int z() { return z; }
+
+    @Override public boolean equals(Object object) {
+        if (this == object) return true;
+        if (!(object instanceof BlockPosition)) return false;
+        BlockPosition other = (BlockPosition) object;
+        return x == other.x
+                && y == other.y
+                && z == other.z;
+    }
+
+    @Override public int hashCode() {
+        int result = Integer.hashCode(x);
+        result = 31 * result + Integer.hashCode(y);
+        result = 31 * result + Integer.hashCode(z);
+        return result;
+    }
+
+    @Override public String toString() {
+        return "BlockPosition[x=" + x + ", y=" + y + ", z=" + z + "]";
+    }
+
     public JsonArray toJson() {
         JsonArray result = new JsonArray();
         result.add(x);

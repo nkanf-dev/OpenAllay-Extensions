@@ -2,82 +2,219 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/nkanf-dev/OpenAllay-Extensions/main/schema/package-manifest.schema.json",
   "title": "OpenAllay Extension Package Manifest",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "id",
-    "name",
-    "version",
-    "provider",
-    "summary",
-    "loaders",
-    "minecraftVersionRange",
-    "openAllayApiVersionRange",
-    "modIds",
-    "source"
-  ],
-  "properties": {
-    "schemaVersion": {
-      "const": 1
-    },
-    "id": {
-      "type": "string",
-      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$"
-    },
-    "name": {
-      "type": "string",
-      "minLength": 1
-    },
-    "version": {
-      "type": "string",
-      "minLength": 1
-    },
-    "provider": {
-      "type": "string",
-      "minLength": 1
-    },
-    "summary": {
-      "type": "string",
-      "minLength": 1
-    },
-    "loaders": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "enum": [
-          "fabric",
-          "neoforge"
-        ]
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "name",
+        "version",
+        "provider",
+        "summary",
+        "loaders",
+        "minecraftVersionRange",
+        "openAllayApiVersionRange",
+        "modIds",
+        "source"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "loaders": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "fabric",
+              "neoforge"
+            ]
+          }
+        },
+        "minecraftVersionRange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "openAllayApiVersionRange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+$"
+          }
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirements": {
+          "$ref": "#/$defs/requirements"
+        }
       }
     },
-    "minecraftVersionRange": {
-      "type": "string",
-      "minLength": 1
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "name",
+        "version",
+        "provider",
+        "summary",
+        "source",
+        "entrypoint",
+        "support"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "entrypoint": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*(?![\\s\\S])"
+        },
+        "support": {
+          "$ref": "#/$defs/support"
+        },
+        "requirements": {
+          "$ref": "#/$defs/requirements"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "support": {
+      "type": "object",
+      "description": "Declared target coordinates form explicit unions. Validation IDs record separate facts and do not grant authority or imply that every declared target was tested.",
+      "additionalProperties": false,
+      "required": [
+        "targets",
+        "minimumJavaVersion",
+        "requiredHostFeatures",
+        "validatedTargetIds"
+      ],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/supportTarget"
+          }
+        },
+        "minimumJavaVersion": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 2147483647
+        },
+        "requiredHostFeatures": {
+          "$ref": "#/$defs/supportIds"
+        },
+        "validatedTargetIds": {
+          "$ref": "#/$defs/supportIds"
+        }
+      }
     },
-    "openAllayApiVersionRange": {
-      "type": "string",
-      "minLength": 1
+    "supportTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loader",
+        "minecraftVersionRange",
+        "openAllayVersionRange",
+        "openAllayApiVersionRange"
+      ],
+      "properties": {
+        "loader": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*(?![\\s\\S])"
+        },
+        "minecraftVersionRange": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Public Maven version range; compatibility and range semantics are checked by OpenAllay core, not this schema."
+        },
+        "openAllayVersionRange": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Public Maven version range; compatibility and range semantics are checked by OpenAllay core, not this schema."
+        },
+        "openAllayApiVersionRange": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Public Maven version range; compatibility and range semantics are checked by OpenAllay core, not this schema."
+        }
+      }
     },
-    "modIds": {
+    "supportIds": {
       "type": "array",
-      "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^[a-z0-9_.-]+$"
+        "pattern": "^[a-z0-9][a-z0-9_.-]*(?::[a-z0-9_][a-z0-9_./-]*)?(?![\\s\\S])"
       }
     },
-    "source": {
-      "type": "string",
-      "minLength": 1
-    },
-    "requirements": {
-      "$ref": "#/$defs/requirements"
-    }
-  },
-  "$defs": {
     "requirements": {
       "type": "object",
       "description": "Advisory declarations only. Missing requirements do not grant authority or prevent installation or use. Omit when empty.",

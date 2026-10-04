@@ -3,9 +3,10 @@
 Community catalog and authoring examples for
 [OpenAllay](https://github.com/nkanf-dev/OpenAllay), the modern Minecraft Agent.
 
-OpenAllay Extensions connect mod APIs to OpenAllay’s typed JavaScript host.
-They are ordinary Fabric or NeoForge mods: after installation, Minecraft loads
-them on restart and OpenAllay discovers the detached capabilities they expose.
+OpenAllay Extensions connect game capabilities to OpenAllay’s typed JavaScript host.
+The native-neutral Extension API 0.3.0 supports one Java-8 payload loaded by the core
+at startup. Existing API 0.2.x loader-mod Extensions keep their declared compatibility
+and ordinary Fabric/NeoForge installation path.
 
 Every distributable Extension JAR embeds a strict package manifest at
 `META-INF/openallay-extension.json`. This lets OpenAllay validate and import a
@@ -24,27 +25,27 @@ API `0.2.0`.
 
 ## First-party Minecraft Builder
 
-[`extensions/minecraft-builder`](extensions/minecraft-builder) is the complete
-online construction Extension. Builder 0.2.1 targets OpenAllay 0.4.x source builds
-and requires public Extension API 0.2.2. Its Java adapter, reviewed JS modules,
-Skill, templates and tests live in this repository, not in OpenAllay core. It
-targets Java 25 and Minecraft 26.2 on Fabric and NeoForge, with client-only loader
-entrypoints.
+[`extensions/minecraft-builder`](extensions/minecraft-builder) builds **one universal
+Builder 0.3.0 JAR** against standalone public SDK 0.3.0. Geometry, terrain, templates,
+journals, Skills and JavaScript stay in one canonical Java-8 domain implementation.
+Minecraft-specific owner scheduling, registries, NBT and world identity belong to the
+core's game adapters, not a separate Extension for each game or loader.
 
-The native backend uses a controlled method module for the active integrated
-server. Normal JavaScript can read through it without Agent JVM access. World
-changes need the independent Builder world-write grant, which is off by default;
-installation, read-only observation and unrestricted JavaScript do not grant it.
-It does not edit offline saves, provide a remote-server write protocol or include
-Baritone/player automation. See the package README for exact execution, undo and
-verification boundaries. Algorithms were independently implemented from the
-requested feature set; no upstream Python or Amulet runtime is distributed.
+The final privately shaded payload has run unchanged on Java 8 and Java 25, and in
+actual Minecraft 26.2 Fabric and NeoForge development clients. The current game-host
+support declaration covers those two verified cells only; Java-8 bytecode alone does
+not claim stock Forge 1.12.2 or a newer game's native compatibility.
 
-Builds consume the exact core API source revision recorded in
-`openallay-source.lock.json`. The Builder quality workflow compiles that core's
-common artifact, then runs the independent Extension tests and both loader
-builds. Package availability in the public catalog still requires published,
-checksum-pinned artifacts; source inclusion is not a catalog release claim.
+World writes still require the independent Builder grant, off by default and frozen
+per request. Installation, host feature availability and read access do not grant it.
+See the [Builder README](extensions/minecraft-builder/README.md) for current build,
+package, native adapter and verification contracts. The immutable published core
+0.4.1 release still bundles legacy Builder 0.2.1; later source integration is separate.
+
+The [source lock](extensions/minecraft-builder/openallay-source.lock.json) pins the
+actual public SDK implementation. The Builder quality workflow builds that SDK and
+tests one native-free universal package. Public catalog entries remain tied to
+published checksum-verified artifacts, not merely committed source.
 
 ## Catalog
 

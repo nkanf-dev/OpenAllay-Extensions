@@ -2,7 +2,7 @@
 name: minecraft-builder
 description: Use when building structures, shaping terrain, laying paths, decorating, or copying structures in the current Minecraft world.
 metadata:
-  openallay/version: "0.2.1"
+  openallay/version: "0.3.0"
   openallay/requires-capabilities: "openallay_builder:world_write"
   openallay/requires-extensions: "openallay:builder"
 allowed-tools: "openallay:run_javascript"
@@ -15,6 +15,14 @@ the answer plus native status. Use `batch` for custom write loops, `read_region`
 for contiguous reads, and `get_blocks` for selected positions. The Extension
 supplies native block validation, world-thread writes, connection updates,
 typed block entities, templates, and undo journals.
+
+The shared source targets Extension SDK 0.3 and Java 8. Minecraft 26.2 is the
+intended native candidate, not a validated release claim. This source does not
+establish support for other game versions or loaders. The connected native
+registry and `context().materialPalette` define available preset materials.
+A missing role fails as `material_unavailable` before that preset writes.
+Use exact registered IDs/properties for custom preset materials; do not invent
+aliases or drop unavailable properties.
 
 ```js
 const building = require("openallay_builder:building");

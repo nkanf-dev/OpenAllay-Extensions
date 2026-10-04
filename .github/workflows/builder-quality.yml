@@ -1,4 +1,4 @@
-name: Builder native quality
+name: Shared Builder quality
 
 on:
   push:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   builder:
-    name: Java 25 / Minecraft 26.2 / both loaders
+    name: One Java 8 Extension / shared SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -23,8 +23,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Read pinned OpenAllay source
+      - name: Read pinned SDK source
         id: core
         shell: python
         run: |
@@ -33,40 +32,33 @@ jobs:
           lock = json.loads(Path("extensions/minecraft-builder/openallay-source.lock.json").read_text())
           assert re.fullmatch(r"[0-9a-f]{40}", lock["revision"]), "Use an exact core commit"
           assert lock["repository"] == "nkanf-dev/OpenAllay"
+          assert lock["openAllayApiVersion"] == "0.3.0"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              for key in ("repository", "revision", "minecraftVersion", "openAllayVersion"):
+              for key in ("repository", "revision", "openAllayApiVersion"):
                   print(f"{key}={lock[key]}", file=output)
-
-      - name: Check out pinned core source
+      - name: Check out pinned SDK source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ steps.core.outputs.repository }}
           ref: ${{ steps.core.outputs.revision }}
           path: .gradle/openallay-core
           persist-credentials: false
-
-      - name: Set up Java 25
+      - name: Set up Java 25 build host
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: "25"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Compile the core API without building any Extensions
+      - name: Test and build the native-free public SDK
         working-directory: .gradle/openallay-core
-        run: ./gradlew --no-daemon :common:jar
-
-      - name: Test Builder and build both native loader packages
-        env:
-          MC_VERSION: ${{ steps.core.outputs.minecraftVersion }}
-          CORE_VERSION: ${{ steps.core.outputs.openAllayVersion }}
+        run: ./gradlew --no-daemon :extension-api:test :extension-api:jar
+      - name: Test and verify the one shared Builder payload
         run: >-
-          ./.gradle/openallay-core/gradlew --no-daemon
+          ./extensions/minecraft-builder/gradlew --no-daemon
           -p extensions/minecraft-builder
-          "-PopenallayCommonJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/common/build/libs/openallay-common-${MC_VERSION}-${CORE_VERSION}.jar"
-          clean :common:test :fabric:build :neoforge:build verifyLoaderPackages
+          "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.3.0.jar"
+          clean build

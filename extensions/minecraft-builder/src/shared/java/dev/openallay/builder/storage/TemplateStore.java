@@ -53,8 +53,8 @@ public final class TemplateStore {
     public static JsonObject validate(JsonObject template) {
         Objects.requireNonNull(template, "template");
         JsonObject copy = template.deepCopy();
-        StrictJson.fields(copy, Set.of("format", "size", "palette", "blocks", "metadata",
-                "includesAir", "gameVersion", "dataVersion"), Set.of());
+        StrictJson.fields(copy, StrictJson.set("format", "size", "palette", "blocks", "metadata",
+                "includesAir", "gameVersion", "dataVersion"), StrictJson.set());
         if (!FORMAT.equals(StrictJson.string(copy.get("format"), "format")))
             throw StrictJson.invalid("Unsupported template format");
         StrictJson.nonBlank(StrictJson.string(copy.get("gameVersion"), "gameVersion"), "gameVersion");
@@ -69,13 +69,13 @@ public final class TemplateStore {
         List<BlockSpec> palette = new ArrayList<>();
         for (JsonElement value : paletteJson) {
             JsonObject item = StrictJson.object(value, "palette block");
-            StrictJson.fields(item, Set.of("id", "properties"), Set.of());
+            StrictJson.fields(item, StrictJson.set("id", "properties"), StrictJson.set());
             palette.add(BlockSpec.fromJson(item));
         }
         Set<BlockPosition> positions = new HashSet<>();
         for (JsonElement value : StrictJson.array(copy.get("blocks"), "blocks")) {
             JsonObject block = StrictJson.object(value, "block");
-            StrictJson.fields(block, Set.of("pos", "state"), Set.of("blockEntity"));
+            StrictJson.fields(block, StrictJson.set("pos", "state"), StrictJson.set("blockEntity"));
             BlockPosition position = BlockPosition.fromJson(block.get("pos"));
             if (position.x() < 0 || position.y() < 0 || position.z() < 0
                     || position.x() >= size.x() || position.y() >= size.y() || position.z() >= size.z())

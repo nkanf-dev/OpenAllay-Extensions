@@ -6,7 +6,8 @@ neighborhood recomputation.
 
 - `place_door(x,y,z,{material:"oak",facing:"north",hinge:"left",open:false})`:
   lower half at y, upper at y+1. Material accepts species, `oak_door`, or a
-  namespaced door ID. All four cardinal facings and both hinges are supported.
+  namespaced door ID. The API accepts all four cardinal facings and both hinges;
+  the exact ID and properties must exist in the connected native registry.
 - `place_bed(x,y,z,{facing:"north",color:"red",block?})`: foot at the input;
   head one block in the facing direction. `block` overrides the color ID.
 - `place_windows(x1,y1,z1,x2,y2,z2,{spacing:3,block:"glass_pane"})`: places

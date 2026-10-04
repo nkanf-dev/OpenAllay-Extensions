@@ -4,12 +4,15 @@ import com.google.gson.JsonObject;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TreeMap;
 
 /** A detached immutable block image. SNBT stays opaque until the native registry codec validates it. */
-public record BlockSpec(String id, Map<String, String> properties, String blockEntity) {
-    public BlockSpec {
+public final class BlockSpec {
+    private final String id;
+    private final Map<String, String> properties;
+    private final String blockEntity;
+
+    public BlockSpec(String id, Map<String, String> properties, String blockEntity) {
         id = StrictJson.identifier(id, "block id");
         Objects.requireNonNull(properties, "properties");
         TreeMap<String, String> copy = new TreeMap<>();
@@ -17,6 +20,33 @@ public record BlockSpec(String id, Map<String, String> properties, String blockE
                 StrictJson.nonBlank(value, "property value")));
         properties = Collections.unmodifiableMap(copy);
         if (blockEntity != null) StrictJson.nonBlank(blockEntity, "blockEntity SNBT");
+        this.id = id;
+        this.properties = properties;
+        this.blockEntity = blockEntity;
+    }
+
+    public String id() { return id; }
+    public Map<String, String> properties() { return properties; }
+    public String blockEntity() { return blockEntity; }
+
+    @Override public boolean equals(Object object) {
+        if (this == object) return true;
+        if (!(object instanceof BlockSpec)) return false;
+        BlockSpec other = (BlockSpec) object;
+        return Objects.equals(id, other.id)
+                && Objects.equals(properties, other.properties)
+                && Objects.equals(blockEntity, other.blockEntity);
+    }
+
+    @Override public int hashCode() {
+        int result = Objects.hashCode(id);
+        result = 31 * result + Objects.hashCode(properties);
+        result = 31 * result + Objects.hashCode(blockEntity);
+        return result;
+    }
+
+    @Override public String toString() {
+        return "BlockSpec[id=" + id + ", properties=" + properties + ", blockEntity=" + blockEntity + "]";
     }
 
     public BlockSpec(String id, Map<String, String> properties) {
@@ -29,7 +59,7 @@ public record BlockSpec(String id, Map<String, String> properties, String blockE
 
     public static BlockSpec fromJson(JsonObject object) {
         Objects.requireNonNull(object, "block");
-        StrictJson.fields(object, Set.of("id", "properties"), Set.of("blockEntity"));
+        StrictJson.fields(object, StrictJson.set("id", "properties"), StrictJson.set("blockEntity"));
         JsonObject values = StrictJson.object(object.get("properties"), "properties");
         Map<String, String> properties = new TreeMap<>();
         values.entrySet().forEach(entry -> properties.put(entry.getKey(),

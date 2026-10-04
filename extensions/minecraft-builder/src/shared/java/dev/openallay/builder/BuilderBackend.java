@@ -1,56 +1,80 @@
 package dev.openallay.builder;
 
+import dev.openallay.builder.storage.BlockPosition;
+import dev.openallay.builder.storage.BlockSpec;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.Callable;
-import net.minecraft.core.BlockPos;
 
-/** Small native seam: production dispatches to game owners; tests use detached in-memory states. */
-interface BuilderBackend {
-    record WriteOutcome(String actual, boolean changed, RuntimeException failure) {}
+/** Detached domain seam. Production delegates every native operation to the public WorldSession. */
+interface BuilderBackend extends AutoCloseable {
+    final class WriteOutcome {
+        private final String actual;
+        private final boolean changed;
+        private final RuntimeException failure;
+        WriteOutcome(String actual, boolean changed, RuntimeException failure) {
+            this.actual = actual; this.changed = changed; this.failure = failure;
+        }
+        String actual() { return actual; }
+        boolean changed() { return changed; }
+        RuntimeException failure() { return failure; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof WriteOutcome)) return false;
+            WriteOutcome that = (WriteOutcome) other;
+            return changed == that.changed && java.util.Objects.equals(actual, that.actual)
+                    && java.util.Objects.equals(failure, that.failure);
+        }
+        @Override public int hashCode() { return 31 * (31 * java.util.Objects.hashCode(actual) + Boolean.hashCode(changed)) + java.util.Objects.hashCode(failure); }
+        @Override public String toString() { return "WriteOutcome[actual=" + actual + ", changed=" + changed + ", failure=" + failure + "]"; }
+    }
+    final class RepairOutcome {
+        private final String before;
+        private final String intended;
+        RepairOutcome(String before, String intended) { this.before = before; this.intended = intended; }
+        String before() { return before; }
+        String intended() { return intended; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof RepairOutcome)) return false;
+            RepairOutcome that = (RepairOutcome) other;
+            return java.util.Objects.equals(before, that.before) && java.util.Objects.equals(intended, that.intended);
+        }
+        @Override public int hashCode() { return 31 * java.util.Objects.hashCode(before) + java.util.Objects.hashCode(intended); }
+        @Override public String toString() { return "RepairOutcome[before=" + before + ", intended=" + intended + "]"; }
+    }
     <T> T call(Callable<T> action);
-    /** Owner slice deadline; tests and detached backends use only deterministic work limits. */
     default long sliceDeadline() { return Long.MAX_VALUE; }
     default long dispatches() { return 0; }
-    /** True only when this captured native backend is running on either game owner. */
     default boolean isOwnerThread() { return false; }
-    void validatePosition(BlockPos position);
-    String read(BlockPos position);
-    /** Sparse capture omits only exact canonical air, never cave/void/custom air. */
-    default String readNonAir(BlockPos position) {
+    void validatePosition(BlockPosition position);
+    String read(BlockPosition position);
+    default String readNonAir(BlockPosition position) {
         String state = read(position);
-        var block = dev.openallay.builder.storage.BlockSpec.fromJson(state);
+        BlockSpec block = BlockSpec.fromJson(state);
         return block.id().equals("minecraft:air") && block.properties().isEmpty() && block.blockEntity() == null ? null : state;
     }
-    /** Exact palette proof for a clipped single-section tile. No proof may cross owner actions. */
     default boolean canonicalAir(BuilderBounds bounds) { return false; }
-    /** Owner-only detached state read; terrain never copies block-entity payloads. */
-    default dev.openallay.builder.storage.BlockSpec terrainState(BlockPos position) {
-        return dev.openallay.builder.storage.BlockSpec.fromJson(read(position));
-    }
-    /** Inclusive safe scan start; detached backends make no air/heightmap assumptions. */
+    default BlockSpec terrainState(BlockPosition position) { return BlockSpec.fromJson(read(position)); }
     default int terrainTop(int x, int z, int minY, int maxY) {
-        validatePosition(new BlockPos(x,minY,z));
-        validatePosition(new BlockPos(x,maxY-1,z));
-        return maxY-1;
+        validatePosition(new BlockPosition(x, minY, z));
+        validatePosition(new BlockPosition(x, maxY - 1, z));
+        return maxY - 1;
     }
-    String preview(BlockPos position, String state);
-    WriteOutcome write(BlockPos position, String state);
-    /** Exact optimistic read from this same owner action; production reuses it for failure accounting. */
-    default WriteOutcome write(BlockPos position, String state, String before) { return write(position,state); }
+    String preview(BlockPosition position, String state);
+    WriteOutcome write(BlockPosition position, String state);
+    default WriteOutcome write(BlockPosition position, String state, String before) { return write(position, state); }
     String transform(String state, int degrees, String mirror);
-    String repairedState(BlockPos position);
-    record RepairOutcome(String before,String intended) {}
-    /** Detached repair result; full before-image is serialized only for an actual native shape change. */
-    default RepairOutcome repair(BlockPos position) {
-        String before=read(position),updated=repairedState(position);
-        return updated==null?null:new RepairOutcome(before,updated);
+    String repairedState(BlockPosition position);
+    default RepairOutcome repair(BlockPosition position) {
+        String before = read(position), updated = repairedState(position);
+        return updated == null ? null : new RepairOutcome(before, updated);
     }
-    void notifyNeighbours(BlockPos position);
+    void notifyNeighbours(BlockPosition position);
     String context();
     String dimension();
-    /** Create/read the journal world identity only for an authorized native world action. */
     String worldId();
-    /** Read an existing identity without creating Minecraft SavedData. */
-    java.util.Optional<String> existingWorldId();
+    Optional<String> existingWorldId();
     Path artifacts();
+    @Override default void close() {}
 }

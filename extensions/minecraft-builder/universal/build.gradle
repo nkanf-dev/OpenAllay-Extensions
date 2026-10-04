@@ -1,0 +1,83 @@
+plugins {
+    id 'java-library'
+    id 'com.gradleup.shadow' version '9.6.1'
+}
+
+group = 'dev.openallay.extensions'
+version = '0.3.0'
+repositories { mavenCentral() }
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    withSourcesJar()
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    if (JavaVersion.current().isJava9Compatible()) options.release = 8
+}
+
+def sdkJarPath = providers.gradleProperty('openallayExtensionApiJar')
+if (!sdkJarPath.isPresent()) {
+    throw new GradleException('Set -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.3.0.jar')
+}
+def sdkJar = file(sdkJarPath.get())
+dependencies {
+    compileOnly files(sdkJar)
+    implementation 'com.google.code.gson:gson:2.14.0'
+    testImplementation files(sdkJar)
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.mozilla:rhino:1.7.15'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir '../src/shared/java'
+        }
+        resources.srcDir '../src/shared/resources'
+    }
+}
+tasks.named('compileJava') {
+    doFirst { if (!sdkJar.isFile()) throw new GradleException("Missing public SDK artifact: ${sdkJar}") }
+}
+tasks.named('test') { useJUnitPlatform() }
+tasks.named('processTestResources') {
+    from('material-palette-inputs.json') { into 'fixtures' }
+}
+tasks.named('jar') {
+    archiveBaseName = 'openallay-builder-universal'
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    from('../LICENSE')
+}
+tasks.named('processResources') {
+    filesMatching('META-INF/openallay-extension.json') { expand(version: project.version) }
+}
+
+// One Java-8 universal payload; the host owns SDK class identity and game libraries.
+tasks.named('shadowJar') {
+    archiveBaseName = 'openallay-builder-universal'
+    archiveClassifier = ''
+    relocate 'com.google.gson', 'dev.openallay.builder.internal.gson'
+    exclude 'module-info.class', 'META-INF/versions/**'
+    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.named('jar') { archiveClassifier = 'thin' }
+tasks.named('assemble') { dependsOn tasks.named('shadowJar') }
+
+// Optional root-owned native conformance proof; no Minecraft classes enter this project.
+tasks.register('exportNativePresetStates', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.openallay.builder.BuilderNativePresetStateExport'
+    doFirst {
+        def output = providers.gradleProperty('nativePresetStateOutput')
+        if (!output.isPresent()) throw new GradleException('Set -PnativePresetStateOutput=/owned/output.json')
+        args output.get()
+    }
+}

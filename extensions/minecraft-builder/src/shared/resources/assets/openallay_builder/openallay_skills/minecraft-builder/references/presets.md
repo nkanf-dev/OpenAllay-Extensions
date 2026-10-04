@@ -20,7 +20,8 @@ All six methods have the signature `(x, y, z, options)`.
 - Every method accepts `facing: "north" | "east" | "south" | "west"`. The default is north, except for cottages, which default to south.
 - The north-facing local plan grows along `+x` and `+z`. Its front is the `-z` side. The anchor remains fixed when rotated: east maps local `(u,w)` to `(-w,u)`, south to `(-u,-w)`, and west to `(w,-u)`. Therefore, a south-facing house extends into negative world x/z from its anchor. A windmill uses the anchor as its tower center. A dock extends away from its entrance along local `+z`.
 - Rotation applies to both positions and block states. The native state transformer handles facing, axes, directional properties, and custom block behavior. There is no preset-level `mirror` option.
-- Material options accept a block ID or `{id, properties}` BlockSpec unless the table says otherwise. Bare IDs use the `minecraft` namespace and the library's aliases. Native registry/state validation runs before placement. Geometry-required properties, such as stair facing or log axis, override those same properties in the supplied BlockSpec.
+- Material defaults come only from `context().materialPalette`: role names map to exact native BlockSpec objects. Missing required roles fail as `material_unavailable` before writes, with no version-based replacement. Tables below describe the intended 26.2 role mappings, not shared hardcoded fallback IDs.
+- Custom materials accept exact block IDs or `{id, properties}` BlockSpecs unless stated otherwise. Bare IDs gain only `minecraft:`; convenience aliases are not applied. The layout adds only essential axis/facing/half/shape/type properties and native-validates them. A supplied conflicting layout property fails before writes; it is never silently overwritten or omitted. All other supplied properties, including `waterlogged`, remain intact. Missing non-layout properties use native registry defaults, not fabricated modern properties.
 - `doorMaterial` accepts a species/material name such as `oak`, `birch`, or `iron`; an unqualified door ID such as `oak_door`; or a qualified door block ID such as `example:cedar_door`. The block must support the native door properties.
 - Structural minimum dimensions keep named features usable. There are no arbitrary maximum dimensions. World build-height and integer-overflow bounds are checked before the first write. The native session can still reject unloaded cells, cancelled work, or invalid live placements. Presets are ordered online writes, not a promise of all-or-nothing rollback of the entire building.
 - Each method clears the required headroom. Cottage, windmill, and farm first flatten a bounded area with three underground layers. They require observed/loaded cells for that terrain step; unknown cells are not treated as air. Existing builds or terrain inside these footprints can be replaced.
@@ -54,9 +55,9 @@ Creates a deep foundation, wooden shell, corner logs, cleared interior, slab roo
 | `facing` | `"north"` | Shared facing rule |
 | `foundation` | `"cobblestone"` | Solid support material; fills `y-2..y` before the floor |
 | `wall` | `"oak_planks"` | Wall block |
-| `log` | `"oak_log"` | Corner block with `axis: "y"` |
+| `log` | `"oak_log"` | Corner block; layout requires `axis: "y"` |
 | `floor` | `"oak_planks"` | Solid floor at `y` |
-| `roof` | `"stone_brick_slab"` | Slab; uses `type: "bottom"`, `waterlogged: "false"` |
+| `roof` | `"stone_brick_slab"` | Layout requires `type: "bottom"`; default native role also has `waterlogged: "false"` |
 | `window` | `"glass_pane"` | Window block |
 | `doorMaterial` | `"oak"` | Shared door-material rule |
 | `bedColor` | `"red"` | One of Minecraft's 16 color names |
@@ -99,9 +100,9 @@ Flattens a foundation and creates a patterned floor, corner/log-beam frame, wall
 | `facing` | `"south"` | Shared facing rule |
 | `name` | `"Cottage"` | Nonempty string; returned metadata only |
 | `wall` | `"oak_planks"` | Wall and roof-gable infill |
-| `roof_stair` / `roofStair` | `"dark_oak_stairs"` | Stair block; facing/half/shape/waterlogging set by roof layout |
-| `roof_slab` / `roofSlab` | `"dark_oak_slab"` | Bottom ridge slab |
-| `log` | `"oak_log"` | Vertical corners and horizontal beams; native rotation changes axes |
+| `roof_stair` / `roofStair` | `"dark_oak_stairs"` | Layout requires east/west facing, bottom half and straight shape; supplied conflicting properties fail |
+| `roof_slab` / `roofSlab` | `"dark_oak_slab"` | Layout requires bottom ridge slab |
+| `log` | `"oak_log"` | Layout requires y/x/z axes at different cells; omit fixed axis in a custom BlockSpec; native rotation changes axes |
 | `foundation` | `"cobblestone"` | Flattened surface and three layers below it |
 | `floor` | `"spruce_planks"` | First checkerboard color |
 | `alternateFloor` | `"oak_planks"` | Second checkerboard color |
@@ -142,15 +143,20 @@ Flattens the area and creates irrigated farmland, mature crops, an outside canal
 | `crops` | `["wheat", "carrots", "potatoes", "beetroots"]` | Nonempty array; crop rules below |
 | `facing` | `"north"` | Gate side |
 | `fence` | `"oak_fence"` | Perimeter above the outside canal |
-| `gate` | `"oak_fence_gate"` | Front gate; facing/open/in_wall/powered set by layout |
+| `gate` | `"oak_fence_gate"` | Layout requires north-facing gate before rotation; default role has closed/unpowered/not-in-wall properties |
 | `foundation` | `"dirt"` | Underground, retaining rim, and solid gate support |
 
-Crop entries can be block-ID strings or `{block: <BlockSpec or ID>, age: <integer>}`. Strings default to mature ages for known farmland crops:
-
-- `wheat`, `carrots`, and `potatoes`: age 7.
-- `beetroots`: age 3, never age 4..7.
-
-Explicit ages must be nonnegative and within the known native crop's range. Other registry crops require an explicit age; native registry/property validation must accept it. Custom crops must be appropriate for farmland. The preset does not infer modded substrate, light, or growth rules. An empty crop array fails before terrain changes.
+Absent `crops` uses `wheat_mature`, `carrots_mature`, `potatoes_mature`,
+and `beetroots_mature` native roles. Their intended 26.2 ages are 7, 7, 7 and 3.
+Custom entries are exact block-ID strings or
+`{block: <BlockSpec or ID>, age?: <integer>}`. Supplied IDs use the native default
+state; supplied BlockSpecs preserve their properties. No mature age is inferred
+from a custom ID. To request a mature custom crop, provide an explicit age.
+Explicit ages must be nonnegative integers accepted by the actual native
+registry. An explicit age that conflicts with `block.properties.age` fails
+instead of replacing it. Custom crops must suit farmland; the preset does not
+infer substrate, light or growth rules. An empty crop array fails before terrain
+changes.
 
 The fence/canal perimeter is one block outside the footprint. A solid containing rim is two blocks outside it. Interior water channels occur at local x 8, 17, 26, and so on. Every farmland cell is within four blocks of water. Farmland uses `moisture: "7"`. Remaining cells cycle through the crop array in row-major order. A `1x1` farm still has one planted crop, water, fence, and gate. Internal canals consume footprint cells; `planted` reports the resulting exact crop count.
 
@@ -164,15 +170,79 @@ Creates a rectangular plank deck, log pilings, side fence rails, and two end lan
 | `width` | `5` | Positive integer, including 1 |
 | `facing` | `"north"` | Entrance side; dock extends away from it |
 | `deck` | `"spruce_planks"` | Exactly `length * width` final deck blocks at `y` |
-| `log` | `"spruce_log"` | Vertical pilings |
+| `log` | `"spruce_log"` | Pilings require `axis: "y"` before rotation |
 | `rail` | `"spruce_fence"` | Side rails and end lantern posts |
 | `pilingDepth` | `4` | Positive integer; below-deck pilings from `y-pilingDepth` through `y-1` |
 | `pilingSpacing` | `4` | Positive integer; first, last, and each multiple row receive pilings |
 
 For widths 3 and larger, rails sit above the two deck edges. For widths 1 and 2, rails and their supporting pilings sit just outside the deck, so they do not block the walking cells. These outside posts are not extra deck blocks. End posts reach `y+2`; lanterns stand at `y+3`. The preset clears three blocks above its occupied footprint. It does not flatten the shore or infer water depth; choose `pilingDepth` to reach the desired support level.
 
-## Verification notes
+## Native role contract
 
-`BuilderPresetsContractTest` runs the shipped CommonJS sources in the real OpenAllay Rhino runtime. It checks semantic landmarks for all six defaults, whole-cottage rotations and block states, linked furniture cells, every-floor skyscraper lights, narrow farm cases, native crop-age prevalidation, custom palettes, short windmills, exact dock widths, and failure-before-write bounds/options checks.
+The shared presets have one geometry implementation. The native adapter supplies
+all default roles below as canonical `{id,properties}` states. The intended
+Minecraft 26.2 mappings preserve the listed properties; native encoding also
+includes the block's actual remaining default properties. The shared script
+never creates these default states itself. Other adapters must provide explicit
+registry-valid roles rather than remove properties, alias unavailable IDs or
+branch on a version string. Doors and beds remain material/color-derived exact
+IDs with linked-state registry prechecks before terrain changes.
 
-The fixture's state transformer is a deliberately limited test double. It proves that every preset delegates state rotation with the correct angle, not that Minecraft's registry accepts every state. Native registry tests and live final-readback checks are still required for loader/game acceptance, supports, neighbor updates, water behavior, and visual quality. No offline or third-party source execution is used as an oracle.
+| Role | Intended 26.2 ID | Required input properties |
+| --- | --- | --- |
+| `air` | `minecraft:air` | Native default properties |
+| `beetroots_mature` | `minecraft:beetroots` | `{"age":"3"}` |
+| `blue_stained_glass` | `minecraft:blue_stained_glass` | Native default properties |
+| `bricks` | `minecraft:bricks` | Native default properties |
+| `campfire_lit_north` | `minecraft:campfire` | `{"facing":"north","lit":"true","signal_fire":"false","waterlogged":"false"}` |
+| `carrots_mature` | `minecraft:carrots` | `{"age":"7"}` |
+| `chest_north_single` | `minecraft:chest` | `{"facing":"north","type":"single","waterlogged":"false"}` |
+| `cobblestone` | `minecraft:cobblestone` | Native default properties |
+| `cobblestone_stairs_south` | `minecraft:cobblestone_stairs` | `{"facing":"south","half":"bottom","shape":"straight","waterlogged":"false"}` |
+| `cyan_stained_glass` | `minecraft:cyan_stained_glass` | Native default properties |
+| `dark_oak_slab_bottom` | `minecraft:dark_oak_slab` | `{"type":"bottom","waterlogged":"false"}` |
+| `dark_oak_stairs_east` | `minecraft:dark_oak_stairs` | `{"facing":"east","half":"bottom","shape":"straight","waterlogged":"false"}` |
+| `dark_oak_stairs_west` | `minecraft:dark_oak_stairs` | `{"facing":"west","half":"bottom","shape":"straight","waterlogged":"false"}` |
+| `dirt` | `minecraft:dirt` | Native default properties |
+| `farmland_hydrated` | `minecraft:farmland` | `{"moisture":"7"}` |
+| `furnace_north` | `minecraft:furnace` | `{"facing":"north","lit":"false"}` |
+| `glass_pane` | `minecraft:glass_pane` | Native default properties |
+| `iron_bars` | `minecraft:iron_bars` | Native default properties |
+| `iron_block` | `minecraft:iron_block` | Native default properties |
+| `ladder_north` | `minecraft:ladder` | `{"facing":"north","waterlogged":"false"}` |
+| `lantern_hanging` | `minecraft:lantern` | `{"hanging":"true","waterlogged":"false"}` |
+| `lantern_standing` | `minecraft:lantern` | `{"hanging":"false","waterlogged":"false"}` |
+| `light_blue_stained_glass` | `minecraft:light_blue_stained_glass` | Native default properties |
+| `lightning_rod_up` | `minecraft:lightning_rod` | `{"facing":"up","powered":"false","waterlogged":"false"}` |
+| `oak_fence` | `minecraft:oak_fence` | Native default properties |
+| `oak_fence_gate_north` | `minecraft:oak_fence_gate` | `{"facing":"north","in_wall":"false","open":"false","powered":"false"}` |
+| `oak_log_x` | `minecraft:oak_log` | `{"axis":"x"}` |
+| `oak_log_y` | `minecraft:oak_log` | `{"axis":"y"}` |
+| `oak_log_z` | `minecraft:oak_log` | `{"axis":"z"}` |
+| `oak_planks` | `minecraft:oak_planks` | Native default properties |
+| `oak_pressure_plate_unpowered` | `minecraft:oak_pressure_plate` | `{"powered":"false"}` |
+| `polished_andesite` | `minecraft:polished_andesite` | Native default properties |
+| `potatoes_mature` | `minecraft:potatoes` | `{"age":"7"}` |
+| `sea_lantern` | `minecraft:sea_lantern` | Native default properties |
+| `smooth_stone` | `minecraft:smooth_stone` | Native default properties |
+| `smooth_stone_slab_bottom` | `minecraft:smooth_stone_slab` | `{"type":"bottom","waterlogged":"false"}` |
+| `spruce_fence` | `minecraft:spruce_fence` | Native default properties |
+| `spruce_log_y` | `minecraft:spruce_log` | `{"axis":"y"}` |
+| `spruce_planks` | `minecraft:spruce_planks` | Native default properties |
+| `stone_brick_slab_bottom` | `minecraft:stone_brick_slab` | `{"type":"bottom","waterlogged":"false"}` |
+| `stone_brick_stairs_south` | `minecraft:stone_brick_stairs` | `{"facing":"south","half":"bottom","shape":"straight","waterlogged":"false"}` |
+| `stone_brick_wall` | `minecraft:stone_brick_wall` | Native default properties |
+| `stone_bricks` | `minecraft:stone_bricks` | Native default properties |
+| `water_source` | `minecraft:water` | `{"level":"0"}` |
+| `wheat_mature` | `minecraft:wheat` | `{"age":"7"}` |
+| `white_concrete` | `minecraft:white_concrete` | Native default properties |
+| `white_wool` | `minecraft:white_wool` | Native default properties |
+
+## Acceptance boundary
+
+Shared source targets Extension SDK 0.3 and Java 8. Minecraft 26.2 is the intended
+native candidate only. This copy does not claim a validated game/loader target
+or support for older Minecraft registries. Detached fixture assertions cover
+material-role lookup, preflight failures, custom property preservation and
+shared geometry contracts. Actual native registry, loader lifecycle, final
+readback, supports and visual acceptance remain separate evidence.

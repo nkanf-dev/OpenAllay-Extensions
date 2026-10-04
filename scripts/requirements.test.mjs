@@ -118,7 +118,7 @@ for (const [label, requirements] of invalidRequirements) {
 
 test("unknown fields and versions remain rejected", async () => {
   await assert.rejects(validateManifest({ ...manifest, unexpected: [] }), /fields do not match schema/);
-  await assert.rejects(validateManifest({ ...manifest, schemaVersion: 2 }), /schemaVersion must be 1/);
+  await assert.rejects(validateManifest({ ...manifest, schemaVersion: 2 }), /fields do not match schema/);
   const missing = { ...manifest };
   delete missing.source;
   await assert.rejects(validateManifest(missing), /fields do not match schema/);
@@ -137,9 +137,11 @@ test("schemas declare the same strict optional requirement contract", async () =
   const schemas = await Promise.all(["package-manifest", "catalog"].map(async (name) =>
     JSON.parse(await readFile(join(root, `schema/${name}.schema.json`), "utf8"))));
   const [packageSchema, catalogSchema] = schemas;
-  assert.equal(packageSchema.properties.schemaVersion.const, 1);
+  const legacyPackageSchema = packageSchema.oneOf.find((branch) => branch.properties.schemaVersion.const === 1);
+  assert.ok(legacyPackageSchema, "the published schema 1 contract must remain present");
+  assert.equal(legacyPackageSchema.properties.schemaVersion.const, 1);
   assert.equal(catalogSchema.properties.schemaVersion.const, 2);
-  for (const [schema, owner] of [[packageSchema, packageSchema], [catalogSchema, catalogSchema.$defs.extension]]) {
+  for (const [schema, owner] of [[packageSchema, legacyPackageSchema], [catalogSchema, catalogSchema.$defs.extension]]) {
     assert.equal(owner.additionalProperties, false);
     assert.equal(owner.required.includes("requirements"), false);
     assert.deepEqual(owner.properties.requirements, { $ref: "#/$defs/requirements" });

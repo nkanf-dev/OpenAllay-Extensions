@@ -28,27 +28,98 @@ public final class OperationJournal {
 
     public enum Status { RUNNING, COMPLETED, FAILED, CANCELLED, INTERRUPTED }
 
-    public record UndoCheck(boolean matches, BlockSpec expected, BlockSpec current) {
-        public UndoCheck {
+    public static final class UndoCheck {
+        private final boolean matches;
+        private final BlockSpec expected;
+        private final BlockSpec current;
+
+        public UndoCheck(boolean matches, BlockSpec expected, BlockSpec current) {
             Objects.requireNonNull(expected, "expected");
             Objects.requireNonNull(current, "current");
             if (matches != expected.equals(current)) throw StrictJson.invalid("Inconsistent undo comparison");
+            this.matches = matches;
+            this.expected = expected;
+            this.current = current;
         }
+
+        public boolean matches() { return matches; }
+        public BlockSpec expected() { return expected; }
+        public BlockSpec current() { return current; }
+
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof UndoCheck)) return false;
+            UndoCheck other = (UndoCheck) object;
+            return matches == other.matches
+                    && Objects.equals(expected, other.expected)
+                    && Objects.equals(current, other.current);
+        }
+
+        @Override public int hashCode() {
+            int result = Boolean.hashCode(matches);
+            result = 31 * result + Objects.hashCode(expected);
+            result = 31 * result + Objects.hashCode(current);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "UndoCheck[matches=" + matches + ", expected=" + expected + ", current=" + current + "]";
+        }
+
     }
 
     /** One detached write-ahead mutation request. */
-    public record Intent(BlockPosition position, BlockSpec before, BlockSpec intended) {
-        public Intent {
+    public static final class Intent {
+        private final BlockPosition position;
+        private final BlockSpec before;
+        private final BlockSpec intended;
+
+        public Intent(BlockPosition position, BlockSpec before, BlockSpec intended) {
             Objects.requireNonNull(position, "position");
             Objects.requireNonNull(before, "before");
             Objects.requireNonNull(intended, "intended");
+            this.position = position;
+            this.before = before;
+            this.intended = intended;
         }
+
+        public BlockPosition position() { return position; }
+        public BlockSpec before() { return before; }
+        public BlockSpec intended() { return intended; }
+
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Intent)) return false;
+            Intent other = (Intent) object;
+            return Objects.equals(position, other.position)
+                    && Objects.equals(before, other.before)
+                    && Objects.equals(intended, other.intended);
+        }
+
+        @Override public int hashCode() {
+            int result = Objects.hashCode(position);
+            result = 31 * result + Objects.hashCode(before);
+            result = 31 * result + Objects.hashCode(intended);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "Intent[position=" + position + ", before=" + before + ", intended=" + intended + "]";
+        }
+
     }
 
     /** sequence is the original first-touch order, even when a position is edited again. */
-    public record Entry(BlockPosition position, BlockSpec before, BlockSpec intended, BlockSpec verified,
-                        long sequence, BlockSpec previousIntended, BlockSpec previousVerified) {
-        public Entry {
+    public static final class Entry {
+        private final BlockPosition position;
+        private final BlockSpec before;
+        private final BlockSpec intended;
+        private final BlockSpec verified;
+        private final long sequence;
+        private final BlockSpec previousIntended;
+        private final BlockSpec previousVerified;
+
+        public Entry(BlockPosition position, BlockSpec before, BlockSpec intended, BlockSpec verified, long sequence, BlockSpec previousIntended, BlockSpec previousVerified) {
             Objects.requireNonNull(position, "position");
             Objects.requireNonNull(before, "before");
             Objects.requireNonNull(intended, "intended");
@@ -57,6 +128,49 @@ public final class OperationJournal {
                 throw StrictJson.invalid("Retouch history requires both previous images");
             if (verified != null && previousVerified != null)
                 throw StrictJson.invalid("Verified entry must not retain pending retouch history");
+            this.position = position;
+            this.before = before;
+            this.intended = intended;
+            this.verified = verified;
+            this.sequence = sequence;
+            this.previousIntended = previousIntended;
+            this.previousVerified = previousVerified;
+        }
+
+        public BlockPosition position() { return position; }
+        public BlockSpec before() { return before; }
+        public BlockSpec intended() { return intended; }
+        public BlockSpec verified() { return verified; }
+        public long sequence() { return sequence; }
+        public BlockSpec previousIntended() { return previousIntended; }
+        public BlockSpec previousVerified() { return previousVerified; }
+
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Entry)) return false;
+            Entry other = (Entry) object;
+            return Objects.equals(position, other.position)
+                    && Objects.equals(before, other.before)
+                    && Objects.equals(intended, other.intended)
+                    && Objects.equals(verified, other.verified)
+                    && sequence == other.sequence
+                    && Objects.equals(previousIntended, other.previousIntended)
+                    && Objects.equals(previousVerified, other.previousVerified);
+        }
+
+        @Override public int hashCode() {
+            int result = Objects.hashCode(position);
+            result = 31 * result + Objects.hashCode(before);
+            result = 31 * result + Objects.hashCode(intended);
+            result = 31 * result + Objects.hashCode(verified);
+            result = 31 * result + Long.hashCode(sequence);
+            result = 31 * result + Objects.hashCode(previousIntended);
+            result = 31 * result + Objects.hashCode(previousVerified);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "Entry[position=" + position + ", before=" + before + ", intended=" + intended + ", verified=" + verified + ", sequence=" + sequence + ", previousIntended=" + previousIntended + ", previousVerified=" + previousVerified + "]";
         }
 
         public Entry(BlockPosition position, BlockSpec before, BlockSpec intended, BlockSpec verified, long sequence) {
@@ -74,9 +188,19 @@ public final class OperationJournal {
         }
     }
 
-    public record Snapshot(String id, String worldId, String dimension, String label, Status status,
-                           long createdAt, long updatedAt, String detail, long checkpoint, List<Entry> entries) {
-        public Snapshot {
+    public static final class Snapshot {
+        private final String id;
+        private final String worldId;
+        private final String dimension;
+        private final String label;
+        private final Status status;
+        private final long createdAt;
+        private final long updatedAt;
+        private final String detail;
+        private final long checkpoint;
+        private final List<Entry> entries;
+
+        public Snapshot(String id, String worldId, String dimension, String label, Status status, long createdAt, long updatedAt, String detail, long checkpoint, List<Entry> entries) {
             requireId(id);
             StrictJson.nonBlank(worldId, "worldId");
             StrictJson.identifier(dimension, "dimension");
@@ -84,7 +208,7 @@ public final class OperationJournal {
             Objects.requireNonNull(status, "status");
             Objects.requireNonNull(detail, "detail");
             if (createdAt < 0 || updatedAt < createdAt || checkpoint < 0) throw StrictJson.invalid("Invalid journal timestamps");
-            entries = List.copyOf(entries);
+            entries = StrictJson.copyList(entries);
             Set<BlockPosition> positions = new HashSet<>();
             long previousSequence = -1;
             for (Entry entry : entries) {
@@ -94,12 +218,67 @@ public final class OperationJournal {
                 if (status == Status.COMPLETED && entry.pending())
                     throw StrictJson.invalid("Completed journal contains an unverified intent");
             }
+            this.id = id;
+            this.worldId = worldId;
+            this.dimension = dimension;
+            this.label = label;
+            this.status = status;
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+            this.detail = detail;
+            this.checkpoint = checkpoint;
+            this.entries = entries;
+        }
+
+        public String id() { return id; }
+        public String worldId() { return worldId; }
+        public String dimension() { return dimension; }
+        public String label() { return label; }
+        public Status status() { return status; }
+        public long createdAt() { return createdAt; }
+        public long updatedAt() { return updatedAt; }
+        public String detail() { return detail; }
+        public long checkpoint() { return checkpoint; }
+        public List<Entry> entries() { return entries; }
+
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Snapshot)) return false;
+            Snapshot other = (Snapshot) object;
+            return Objects.equals(id, other.id)
+                    && Objects.equals(worldId, other.worldId)
+                    && Objects.equals(dimension, other.dimension)
+                    && Objects.equals(label, other.label)
+                    && Objects.equals(status, other.status)
+                    && createdAt == other.createdAt
+                    && updatedAt == other.updatedAt
+                    && Objects.equals(detail, other.detail)
+                    && checkpoint == other.checkpoint
+                    && Objects.equals(entries, other.entries);
+        }
+
+        @Override public int hashCode() {
+            int result = Objects.hashCode(id);
+            result = 31 * result + Objects.hashCode(worldId);
+            result = 31 * result + Objects.hashCode(dimension);
+            result = 31 * result + Objects.hashCode(label);
+            result = 31 * result + Objects.hashCode(status);
+            result = 31 * result + Long.hashCode(createdAt);
+            result = 31 * result + Long.hashCode(updatedAt);
+            result = 31 * result + Objects.hashCode(detail);
+            result = 31 * result + Long.hashCode(checkpoint);
+            result = 31 * result + Objects.hashCode(entries);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "Snapshot[id=" + id + ", worldId=" + worldId + ", dimension=" + dimension + ", label=" + label + ", status=" + status + ", createdAt=" + createdAt + ", updatedAt=" + updatedAt + ", detail=" + detail + ", checkpoint=" + checkpoint + ", entries=" + entries + "]";
         }
 
         public List<Entry> reverseEntries() {
             List<Entry> reverse = new ArrayList<>(entries);
             Collections.reverse(reverse);
-            return List.copyOf(reverse);
+            return StrictJson.copyList(reverse);
         }
     }
 
@@ -120,14 +299,44 @@ public final class OperationJournal {
         String id;
         do { id=UUID.randomUUID().toString(); } while(files.exists(id));
         long now=clock.millis();
-        Snapshot initial=new Snapshot(id,worldId,dimension,label,Status.RUNNING,now,now,"",0,List.of());
+        Snapshot initial=new Snapshot(id,worldId,dimension,label,Status.RUNNING,now,now,"",0,Collections.emptyList());
         files.write(id,writer -> writeSnapshot(writer,initial));
         Operation operation=new Operation(initial);
         active.put(id,operation);
         return operation;
     }
 
-    private record StoredNames(List<String> bases,Map<String,java.util.SortedMap<Long,String>> deltas) {}
+    private static final class StoredNames {
+        private final List<String> bases;
+        private final Map<String,java.util.SortedMap<Long,String>> deltas;
+
+        private StoredNames(List<String> bases, Map<String,java.util.SortedMap<Long,String>> deltas) {
+            this.bases = bases;
+            this.deltas = deltas;
+        }
+
+        public List<String> bases() { return bases; }
+        public Map<String,java.util.SortedMap<Long,String>> deltas() { return deltas; }
+
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof StoredNames)) return false;
+            StoredNames other = (StoredNames) object;
+            return Objects.equals(bases, other.bases)
+                    && Objects.equals(deltas, other.deltas);
+        }
+
+        @Override public int hashCode() {
+            int result = Objects.hashCode(bases);
+            result = 31 * result + Objects.hashCode(deltas);
+            return result;
+        }
+
+        @Override public String toString() {
+            return "StoredNames[bases=" + bases + ", deltas=" + deltas + "]";
+        }
+
+    }
     private StoredNames names() throws IOException {
         List<String> bases=new ArrayList<>();
         Map<String,java.util.SortedMap<Long,String>> deltas=new HashMap<>();
@@ -141,14 +350,14 @@ public final class OperationJournal {
                     if(!sequence.matches("[0-9]{20}"))throw StrictJson.invalid("Invalid delta sequence filename");
                     long n=Long.parseLong(sequence);
                     if(n<1)throw StrictJson.invalid("Delta sequence must be positive");
-                    var prior=deltas.computeIfAbsent(id,key->new java.util.TreeMap<>()).put(n,name);
+                    String prior=deltas.computeIfAbsent(id,key->new java.util.TreeMap<>()).put(n,name);
                     if(prior!=null)throw StrictJson.invalid("Duplicate delta sequence");
                 }
             } catch(IllegalArgumentException invalid) { throw new IOException("Invalid journal record filename: " + name,invalid); }
         }
-        Set<String> baseIds=Set.copyOf(bases);
+        Set<String> baseIds=StrictJson.copySet(bases);
         for(String id:deltas.keySet())if(!baseIds.contains(id))throw new IOException("Orphan journal deltas without base: " + id);
-        return new StoredNames(List.copyOf(bases),deltas);
+        return new StoredNames(StrictJson.copyList(bases),deltas);
     }
 
     public synchronized Snapshot load(String id) throws IOException { return load(id,names()); }
@@ -160,7 +369,7 @@ public final class OperationJournal {
             Snapshot initial=decode(base);
             if(!id.equals(initial.id()))throw StrictJson.invalid("Journal filename/id mismatch");
             Operation reconstructed=new Operation(initial);
-            for(var record:names.deltas().getOrDefault(id,new java.util.TreeMap<>()).entrySet()) {
+            for(Map.Entry<Long,String> record:names.deltas().getOrDefault(id,new java.util.TreeMap<>()).entrySet()) {
                 if(record.getKey()<=initial.checkpoint())continue; // Covered by atomic checkpoint; cleanup may have crashed.
                 if(initial.status()!=Status.RUNNING)throw StrictJson.invalid("Terminal checkpoint has uncovered deltas");
                 if(record.getKey()!=reconstructed.sequence+1)throw StrictJson.invalid("Missing/out-of-order journal delta at sequence " + (reconstructed.sequence+1));
@@ -174,7 +383,7 @@ public final class OperationJournal {
         StoredNames names=names();
         List<Snapshot> result=new ArrayList<>();
         for(String id:names.bases())result.add(load(id,names));
-        return List.copyOf(result);
+        return StrictJson.copyList(result);
     }
 
     /** Recovery only changes journal metadata. No world callbacks, replayed writes or rollback. */
@@ -190,7 +399,7 @@ public final class OperationJournal {
             compact(next,names.deltas().getOrDefault(id,new java.util.TreeMap<>()));
             recovered.add(next);
         }
-        return List.copyOf(recovered);
+        return StrictJson.copyList(recovered);
     }
 
     public final class Operation {
@@ -209,12 +418,12 @@ public final class OperationJournal {
         }
         public String id() { return id; }
         public Snapshot snapshot() {
-            synchronized(OperationJournal.this) { return new Snapshot(id,worldId,dimension,label,status,createdAt,updatedAt,detail,sequence,List.copyOf(entries.values())); }
+            synchronized(OperationJournal.this) { return new Snapshot(id,worldId,dimension,label,status,createdAt,updatedAt,detail,sequence,StrictJson.copyList(entries.values())); }
         }
         public boolean hasEntries() { synchronized(OperationJournal.this) { return !entries.isEmpty(); } }
-        public void recordIntent(BlockPosition position,BlockSpec before,BlockSpec intended) throws IOException { recordIntents(List.of(new Intent(position,before,intended))); }
+        public void recordIntent(BlockPosition position,BlockSpec before,BlockSpec intended) throws IOException { recordIntents(Collections.singletonList(new Intent(position,before,intended))); }
         public void recordIntents(List<Intent> intents) throws IOException {
-            List<Intent> detached=List.copyOf(intents);
+            List<Intent> detached=StrictJson.copyList(intents);
             synchronized(OperationJournal.this) {
                 requireRunning();if(detached.isEmpty())return;
                 Map<BlockPosition,Entry> replacement=prepareIntents(detached);
@@ -248,18 +457,18 @@ public final class OperationJournal {
             }
             return replacement;
         }
-        public void verified(BlockPosition position,BlockSpec actual) throws IOException { verifiedAll(Map.of(position,actual)); }
-        public void verifiedAll(Map<BlockPosition,BlockSpec> actual) throws IOException { resolve(actual,List.of()); }
-        public void abortIntents(Collection<BlockPosition> knownUnstarted) throws IOException { resolve(Map.of(),knownUnstarted); }
+        public void verified(BlockPosition position,BlockSpec actual) throws IOException { verifiedAll(Collections.singletonMap(Objects.requireNonNull(position),Objects.requireNonNull(actual))); }
+        public void verifiedAll(Map<BlockPosition,BlockSpec> actual) throws IOException { resolve(actual,Collections.emptyList()); }
+        public void abortIntents(Collection<BlockPosition> knownUnstarted) throws IOException { resolve(Collections.emptyMap(),knownUnstarted); }
         /** Actual readbacks and known unstarted withdrawals share one durable outcome publication. */
         public void resolve(Map<BlockPosition,BlockSpec> actual,Collection<BlockPosition> knownUnstarted) throws IOException {
-            Map<BlockPosition,BlockSpec> detached=Map.copyOf(actual);Set<BlockPosition> aborted=Set.copyOf(knownUnstarted);
+            Map<BlockPosition,BlockSpec> detached=StrictJson.copyMap(actual);Set<BlockPosition> aborted=StrictJson.copySet(knownUnstarted);
             synchronized(OperationJournal.this) {
                 requireRunning();if(detached.isEmpty() && aborted.isEmpty())return;
                 Map<BlockPosition,Entry> replacement=prepareOutcome(detached,aborted);
                 publish("outcome",writer -> {
                     writer.name("actual").beginArray();
-                    for(var image:detached.entrySet()) {
+                    for(Map.Entry<BlockPosition,BlockSpec> image:detached.entrySet()) {
                         writer.beginObject();
                         writer.name("position");writePosition(writer,image.getKey());
                         writer.name("actual");writeBlock(writer,image.getValue());
@@ -292,15 +501,16 @@ public final class OperationJournal {
         }
         private void applyOutcome(Map<BlockPosition,Entry> replacement) {
             boolean removed=false;
-            for(var item:replacement.entrySet()) {
+            for(Map.Entry<BlockPosition,Entry> item:replacement.entrySet()) {
                 if(item.getValue()==null) {entries.remove(item.getKey());removed=true;}
                 else entries.put(item.getKey(),item.getValue());
             }
             if(removed) {
                 // Replacements never move an existing key. Insertion order is first-touch
                 // order, so only the tail determines the next sequence after withdrawals.
-                var last=entries.lastEntry();
-                nextTouch=last==null?0:last.getValue().sequence()+1;
+                Entry last=null;
+                for(Entry entry:entries.values())last=entry;
+                nextTouch=last==null?0:last.sequence()+1;
             }
         }
         private void publish(String kind,AtomicJsonFiles.JsonContent content) throws IOException {
@@ -325,21 +535,21 @@ public final class OperationJournal {
             sequence=next;updatedAt=time;
         }
         private void replay(JsonObject delta,long expected) {
-            StrictJson.fields(delta,Set.of("format","id","sequence","updatedAt","kind"),Set.of("intents","actual","unstarted"));
+            StrictJson.fields(delta,StrictJson.set("format","id","sequence","updatedAt","kind"),StrictJson.set("intents","actual","unstarted"));
             if(!DELTA_FORMAT.equals(StrictJson.string(delta.get("format"),"format")) || !id.equals(StrictJson.string(delta.get("id"),"id")) || StrictJson.longInteger(delta.get("sequence"),"sequence")!=expected)
                 throw StrictJson.invalid("Delta identity/sequence mismatch");
             long time=StrictJson.longInteger(delta.get("updatedAt"),"updatedAt");if(time<updatedAt)throw StrictJson.invalid("Delta timestamp moved backwards");
             String kind=StrictJson.string(delta.get("kind"),"kind");
             if(kind.equals("intents")) {
-                StrictJson.fields(delta,Set.of("format","id","sequence","updatedAt","kind","intents"),Set.of());
+                StrictJson.fields(delta,StrictJson.set("format","id","sequence","updatedAt","kind","intents"),StrictJson.set());
                 List<Intent> intents=new ArrayList<>();
-                for(JsonElement element:StrictJson.array(delta.get("intents"),"intents")) {JsonObject value=StrictJson.object(element,"intent");StrictJson.fields(value,Set.of("position","before","intended"),Set.of());intents.add(new Intent(BlockPosition.fromJson(value.get("position")),BlockSpec.fromJson(StrictJson.object(value.get("before"),"before")),BlockSpec.fromJson(StrictJson.object(value.get("intended"),"intended"))));}
+                for(JsonElement element:StrictJson.array(delta.get("intents"),"intents")) {JsonObject value=StrictJson.object(element,"intent");StrictJson.fields(value,StrictJson.set("position","before","intended"),StrictJson.set());intents.add(new Intent(BlockPosition.fromJson(value.get("position")),BlockSpec.fromJson(StrictJson.object(value.get("before"),"before")),BlockSpec.fromJson(StrictJson.object(value.get("intended"),"intended"))));}
                 if(intents.isEmpty())throw StrictJson.invalid("Empty intent delta");
-                var replacement=prepareIntents(intents);replacement.forEach(entries::put);for(Entry entry:replacement.values())nextTouch=Math.max(nextTouch,entry.sequence()+1);
+                Map<BlockPosition,Entry> replacement=prepareIntents(intents);replacement.forEach(entries::put);for(Entry entry:replacement.values())nextTouch=Math.max(nextTouch,entry.sequence()+1);
             } else if(kind.equals("outcome")) {
-                StrictJson.fields(delta,Set.of("format","id","sequence","updatedAt","kind","actual","unstarted"),Set.of());
+                StrictJson.fields(delta,StrictJson.set("format","id","sequence","updatedAt","kind","actual","unstarted"),StrictJson.set());
                 Map<BlockPosition,BlockSpec> actual=new HashMap<>();Set<BlockPosition> aborted=new HashSet<>();
-                for(JsonElement element:StrictJson.array(delta.get("actual"),"actual")) {JsonObject value=StrictJson.object(element,"image");StrictJson.fields(value,Set.of("position","actual"),Set.of());if(actual.put(BlockPosition.fromJson(value.get("position")),BlockSpec.fromJson(StrictJson.object(value.get("actual"),"actual")))!=null)throw StrictJson.invalid("Duplicate actual image");}
+                for(JsonElement element:StrictJson.array(delta.get("actual"),"actual")) {JsonObject value=StrictJson.object(element,"image");StrictJson.fields(value,StrictJson.set("position","actual"),StrictJson.set());if(actual.put(BlockPosition.fromJson(value.get("position")),BlockSpec.fromJson(StrictJson.object(value.get("actual"),"actual")))!=null)throw StrictJson.invalid("Duplicate actual image");}
                 for(JsonElement value:StrictJson.array(delta.get("unstarted"),"unstarted"))if(!aborted.add(BlockPosition.fromJson(value)))throw StrictJson.invalid("Duplicate unstarted position");
                 if(actual.isEmpty() && aborted.isEmpty())throw StrictJson.invalid("Empty outcome delta");
                 applyOutcome(prepareOutcome(actual,aborted));
@@ -349,7 +559,7 @@ public final class OperationJournal {
         public void finish(Status terminal,String message) throws IOException {
             synchronized(OperationJournal.this) {
                 requireRunning();if(terminal==Status.RUNNING)throw StrictJson.invalid("Terminal status required");
-                Snapshot next=new Snapshot(id,worldId,dimension,label,terminal,createdAt,Math.max(updatedAt,clock.millis()),message==null?"":message,sequence,List.copyOf(entries.values()));
+                Snapshot next=new Snapshot(id,worldId,dimension,label,terminal,createdAt,Math.max(updatedAt,clock.millis()),message==null?"":message,sequence,StrictJson.copyList(entries.values()));
                 try { compact(next,initialCheckpoint); }
                 catch(IOException failure) { publicationFailure=failure;throw failure; }
                 status=terminal;updatedAt=next.updatedAt();detail=next.detail();active.remove(id);
@@ -376,7 +586,7 @@ public final class OperationJournal {
     private void compact(Snapshot snapshot,java.util.SortedMap<Long,String> records) throws IOException {
         files.write(snapshot.id(),writer -> writeSnapshot(writer,snapshot));
         // Startup already collected and checked these filenames. Reuse that one directory scan.
-        for(var record:records.entrySet())if(record.getKey()<=snapshot.checkpoint())files.delete(record.getValue());
+        for(Map.Entry<Long,String> record:records.entrySet())if(record.getKey()<=snapshot.checkpoint())files.delete(record.getValue());
     }
     private static void requireId(String id) {
         if(id==null)throw StrictJson.invalid("Operation id is required");
@@ -390,7 +600,7 @@ public final class OperationJournal {
 
     private static void writeBlock(JsonWriter writer,BlockSpec block) throws IOException {
         writer.beginObject().name("id").value(block.id()).name("properties").beginObject();
-        for(var property:block.properties().entrySet())writer.name(property.getKey()).value(property.getValue());
+        for(Map.Entry<String,String> property:block.properties().entrySet())writer.name(property.getKey()).value(property.getValue());
         writer.endObject();
         if(block.blockEntity()!=null)writer.name("blockEntity").value(block.blockEntity());
         writer.endObject();
@@ -438,11 +648,11 @@ public final class OperationJournal {
         result.add("entries",entries);return result;
     }
     static Snapshot decode(JsonObject object) {
-        StrictJson.fields(object,Set.of("format","id","worldId","dimension","label","status","createdAt","updatedAt","detail","checkpoint","entries"),Set.of());
+        StrictJson.fields(object,StrictJson.set("format","id","worldId","dimension","label","status","createdAt","updatedAt","detail","checkpoint","entries"),StrictJson.set());
         if(!FORMAT.equals(StrictJson.string(object.get("format"),"format")))throw StrictJson.invalid("Unsupported journal format");
         List<Entry> entries=new ArrayList<>();
         for(JsonElement item:StrictJson.array(object.get("entries"),"entries")) {
-            JsonObject value=StrictJson.object(item,"entry");StrictJson.fields(value,Set.of("position","before","intended","sequence"),Set.of("verified","previousIntended","previousVerified"));
+            JsonObject value=StrictJson.object(item,"entry");StrictJson.fields(value,StrictJson.set("position","before","intended","sequence"),StrictJson.set("verified","previousIntended","previousVerified"));
             entries.add(new Entry(BlockPosition.fromJson(value.get("position")),BlockSpec.fromJson(StrictJson.object(value.get("before"),"before")),BlockSpec.fromJson(StrictJson.object(value.get("intended"),"intended")),value.has("verified")?BlockSpec.fromJson(StrictJson.object(value.get("verified"),"verified")):null,StrictJson.longInteger(value.get("sequence"),"sequence"),value.has("previousIntended")?BlockSpec.fromJson(StrictJson.object(value.get("previousIntended"),"previousIntended")):null,value.has("previousVerified")?BlockSpec.fromJson(StrictJson.object(value.get("previousVerified"),"previousVerified")):null));
         }
         return new Snapshot(StrictJson.string(object.get("id"),"id"),StrictJson.string(object.get("worldId"),"worldId"),StrictJson.string(object.get("dimension"),"dimension"),StrictJson.string(object.get("label"),"label"),Status.valueOf(StrictJson.string(object.get("status"),"status")),StrictJson.longInteger(object.get("createdAt"),"createdAt"),StrictJson.longInteger(object.get("updatedAt"),"updatedAt"),StrictJson.string(object.get("detail"),"detail"),StrictJson.longInteger(object.get("checkpoint"),"checkpoint"),entries);
