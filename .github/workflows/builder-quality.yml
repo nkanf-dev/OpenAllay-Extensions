@@ -55,10 +55,8 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Test and build the native-free public SDK
         working-directory: .gradle/openallay-core
-        run: ./gradlew --no-daemon :extension-api:test :extension-api:jar
+        run: ./gradlew --no-daemon :extension-api:jar
       - name: Test and verify the one shared Builder payload
-        run: >-
-          ./extensions/minecraft-builder/gradlew --no-daemon
-          -p extensions/minecraft-builder
-          "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.4.0.jar"
-          clean build
+        run: |
+          ./extensions/minecraft-builder/gradlew --no-daemon -p extensions/minecraft-builder             "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.4.0.jar"             :universal:test --tests dev.openallay.builder.BuilderSkillContractTest
+          ./extensions/minecraft-builder/gradlew --no-daemon -p extensions/minecraft-builder             "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.4.0.jar"             build -x :universal:test

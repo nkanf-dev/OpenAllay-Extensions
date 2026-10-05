@@ -33,6 +33,23 @@ final class BuilderSkillContractTest {
         assertEquals("openallay:builder", extension.descriptor().id());
         assertEquals("0.4.0", extension.descriptor().version());
         assertEquals(47, extension.descriptor().support().targets().size());
+        try (java.io.InputStream input = BuilderExtension.class.getClassLoader()
+                .getResourceAsStream("META-INF/openallay-extension.json")) {
+            assertNotNull(input);
+            com.google.gson.JsonArray packaged = com.google.gson.JsonParser.parseReader(
+                    new java.io.InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonObject("support").getAsJsonArray("targets");
+            Set<String> packagedPairs = new HashSet<String>();
+            for (com.google.gson.JsonElement item : packaged) {
+                JsonObject target = item.getAsJsonObject();
+                packagedPairs.add(target.get("loader").getAsString() + ":" + target.get("minecraftVersionRange").getAsString());
+            }
+            assertEquals(extension.descriptor().support().targets().stream()
+                    .map(target -> target.loader() + ":" + target.minecraftVersionRange())
+                    .collect(Collectors.toSet()), packagedPairs);
+        } catch (java.io.IOException failure) {
+            throw new AssertionError(failure);
+        }
         assertEquals(set("1.19.2", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3"),
                 extension.descriptor().support().targets().stream().map(SupportTarget::minecraftVersionRange).collect(Collectors.toSet()));
         assertEquals(set("fabric", "forge", "neoforge"), extension.descriptor().support().targets().stream()
