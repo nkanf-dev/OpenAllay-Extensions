@@ -15,8 +15,8 @@ for contiguous reads, and `get_blocks` for selected positions. The Extension
 supplies native block validation, world-thread writes, connection updates,
 typed block entities, templates, and undo journals.
 
-The Extension uses SDK 0.4.0 and Java 8. Its package targets Minecraft 26.2
-Fabric and NeoForge. The connected native registry and
+The Extension uses SDK 0.4.0 and Java 8. Its support manifest lists the exact
+Minecraft and loader targets. The connected native registry and
 `context().materialPalette` define available preset materials.
 A missing role fails as `material_unavailable` before that preset writes.
 Use exact registered IDs/properties for custom preset materials; do not invent

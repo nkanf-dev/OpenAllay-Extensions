@@ -32,10 +32,10 @@ final class BuilderSkillContractTest {
         BuilderExtension extension = new BuilderExtension();
         assertEquals("openallay:builder", extension.descriptor().id());
         assertEquals("0.4.0", extension.descriptor().version());
-        assertEquals(46, extension.descriptor().support().targets().size());
-        assertEquals(set("1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3"),
+        assertEquals(47, extension.descriptor().support().targets().size());
+        assertEquals(set("1.19.2", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3"),
                 extension.descriptor().support().targets().stream().map(SupportTarget::minecraftVersionRange).collect(Collectors.toSet()));
-        assertEquals(set("fabric", "neoforge"), extension.descriptor().support().targets().stream()
+        assertEquals(set("fabric", "forge", "neoforge"), extension.descriptor().support().targets().stream()
                 .map(SupportTarget::loader).collect(Collectors.toSet()));
         for (SupportTarget target : extension.descriptor().support().targets()) {
             assertEquals("[0.4.0,0.5.0)", target.openAllayApiVersionRange());
