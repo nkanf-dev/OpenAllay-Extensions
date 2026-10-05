@@ -31,10 +31,14 @@ final class BuilderSkillContractTest {
     void extensionDeclaresAllModulesAndTheProgressivelyLoadedAdvisorySkill() {
         BuilderExtension extension = new BuilderExtension();
         assertEquals("openallay:builder", extension.descriptor().id());
-        assertEquals("0.3.0", extension.descriptor().version());
-        assertEquals(2, extension.descriptor().support().targets().size());
+        assertEquals("0.4.0", extension.descriptor().version());
+        assertEquals(46, extension.descriptor().support().targets().size());
+        assertEquals(set("1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3"),
+                extension.descriptor().support().targets().stream().map(SupportTarget::minecraftVersionRange).collect(Collectors.toSet()));
+        assertEquals(set("fabric", "neoforge"), extension.descriptor().support().targets().stream()
+                .map(SupportTarget::loader).collect(Collectors.toSet()));
         for (SupportTarget target : extension.descriptor().support().targets()) {
-            assertEquals("[0.3.0,0.4.0)", target.openAllayApiVersionRange());
+            assertEquals("[0.4.0,0.5.0)", target.openAllayApiVersionRange());
         }
         assertEquals(8, extension.descriptor().support().minimumJavaVersion());
         ExtensionContribution contribution = contribution();
@@ -46,12 +50,10 @@ final class BuilderSkillContractTest {
         String document = source.files().get(source.entryPath());
         assertEquals("minecraft-builder", scalar(document, "name"));
         assertEquals(extension.descriptor().version(), scalar(document, "openallay/version"));
-        assertEquals(BuilderBindings.WORLD_WRITE, scalar(document, "openallay/requires-capabilities"));
-        assertEquals(set(BuilderBindings.WORLD_WRITE), extension.descriptor().requirements().capabilities());
+        assertFalse(Pattern.compile("(?m)^\\s*openallay/requires-capabilities:").matcher(document).find());
+        assertTrue(extension.descriptor().requirements().isEmpty());
         assertEquals(Arrays.asList(BuilderBindings.MODULE), contribution.hostBindings().stream()
                 .map(binding -> binding.id()).collect(Collectors.toList()));
-        assertEquals(Arrays.asList(BuilderBindings.WORLD_WRITE), contribution.capabilities().stream()
-                .map(capability -> capability.id()).collect(Collectors.toList()));
         assertEquals("openallay:builder", scalar(document, "openallay/requires-extensions"));
         assertFalse(Pattern.compile("(?m)^required-mods:").matcher(document).find());
         assertEquals(set("openallay:run_javascript"), set(scalar(document, "allowed-tools")));
@@ -63,17 +65,26 @@ final class BuilderSkillContractTest {
     }
 
     @Test
-    void onlyWorldChangingMethodsRequireTheIndependentBuilderWriteGrant() {
+    void hostMethodsDeclareExactDetachedJsonShapesWithoutJvmAccess() {
         JavascriptHostBinding binding = contribution().hostBindings().get(0);
-        assertEquals(set("write", "writeRegion", "updateConnections", "syncPhysics", "undo"),
-                binding.methods().stream().filter(method -> !method.requiredCapabilities().isEmpty())
-                        .map(method -> method.name()).collect(Collectors.toSet()));
+        Map<String,Integer> arities = new LinkedHashMap<>();
+        arities.put("open", 1); arities.put("context", 1); arities.put("read", 4);
+        arities.put("readPositions", 2); arities.put("readRegion", 2);
+        arities.put("scanColumns", 2); arities.put("probeColumns", 2);
+        arities.put("write", 5); arities.put("writeRegion", 2); arities.put("transformState", 4);
+        arities.put("updateConnections", 2); arities.put("syncPhysics", 2);
+        arities.put("saveTemplate", 3); arities.put("loadTemplate", 2); arities.put("listTemplates", 1);
+        arities.put("listOperations", 1); arities.put("status", 1); arities.put("finish", 1);
+        arities.put("cancel", 1); arities.put("close", 1); arities.put("undo", 2);
+        assertEquals(arities.keySet(), binding.methods().stream().map(method -> method.name()).collect(Collectors.toSet()));
         for (JavascriptHostMethod method : binding.methods()) {
-            assertTrue(method.requiredCapabilities().isEmpty()
-                    || method.requiredCapabilities().equals(set(BuilderBindings.WORLD_WRITE)));
+            assertEquals(arities.get(method.name()).intValue(), method.parameters().size(), method.name());
+            assertTrue(method.parameters().stream().allMatch(type -> type == dev.openallay.api.extension.JavascriptHostValueType.STRING
+                    || type == dev.openallay.api.extension.JavascriptHostValueType.INTEGER), method.name());
+            assertEquals(set("saveTemplate", "cancel", "close").contains(method.name())
+                    ? dev.openallay.api.extension.JavascriptHostValueType.NULL
+                    : dev.openallay.api.extension.JavascriptHostValueType.STRING, method.result(), method.name());
         }
-        assertTrue(binding.methods().stream().anyMatch(method -> method.name().equals("open")
-                && method.requiredCapabilities().isEmpty()));
         assertFalse(BuilderJsFixture.resource("building.js").contains("Java.type"));
     }
 

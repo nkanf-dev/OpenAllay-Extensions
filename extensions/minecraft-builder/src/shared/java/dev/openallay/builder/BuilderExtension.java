@@ -24,16 +24,19 @@ import java.util.Map;
 public final class BuilderExtension implements OpenAllayExtension {
     public BuilderExtension() {}
     @Override public ExtensionDescriptor descriptor() {
-        List<SupportTarget> targets = Arrays.asList(
-                new SupportTarget("fabric", "26.2", "[0.4.1,)", "[0.3.0,0.4.0)"),
-                new SupportTarget("neoforge", "26.2", "[0.4.1,)", "[0.3.0,0.4.0)"));
-        return new ExtensionDescriptor("openallay:builder", "Minecraft Builder", "0.3.0",
+        List<SupportTarget> targets = new ArrayList<SupportTarget>();
+        // One payload and public API across the prepared native target profiles.
+        for (String loader : Arrays.asList("fabric", "neoforge")) {
+            for (String game : Arrays.asList("1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3")) {
+                targets.add(new SupportTarget(loader, game, "[0.4.1,)", "[0.4.0,0.5.0)"));
+            }
+        }
+        return new ExtensionDescriptor("openallay:builder", "Minecraft Builder", "0.4.0",
                 "OpenAllay", "Full online construction for the active integrated Minecraft server.",
                 "https://github.com/nkanf-dev/OpenAllay-Extensions",
                 new SupportDeclaration(targets, 8, Collections.singleton("minecraft:world-access"),
                         Collections.<String>emptySet()),
-                new ExtensionRequirements(Collections.singleton(BuilderBindings.WORLD_WRITE),
-                        Collections.<String>emptySet(), Collections.<String>emptySet()));
+                ExtensionRequirements.EMPTY);
     }
     @Override public ExtensionContribution contribution(ExtensionHost host) {
         String root = "assets/openallay_builder/";
@@ -49,8 +52,7 @@ public final class BuilderExtension implements OpenAllayExtension {
         }
         SkillSource skill = new SkillSource("openallay:builder", skillRoot + "SKILL.md", files, SkillSource.Origin.EXTERNAL);
         return new ExtensionContribution(modules, Collections.singletonList(skill), Collections.emptyList(),
-                Collections.singletonList(new BuilderParticipant(host)), Collections.singletonList(BuilderBindings.binding()),
-                Collections.singletonList(BuilderBindings.capability()));
+                Collections.singletonList(new BuilderParticipant(host)), Collections.singletonList(BuilderBindings.binding()));
     }
     private static String resource(String path) {
         try (InputStream input = BuilderExtension.class.getClassLoader().getResourceAsStream(path)) {

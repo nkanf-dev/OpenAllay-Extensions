@@ -11,18 +11,24 @@ tasks.register('verifyUniversalPackage') {
             if (entry == null) throw new GradleException('Missing universal package manifest')
             def metadata = new JsonSlurper().parse(jar.getInputStream(entry))
             if (metadata.schemaVersion != 2 || metadata.id != 'openallay:builder'
-                    || metadata.version != '0.3.0'
+                    || metadata.version != '0.4.0'
                     || metadata.entrypoint != 'dev.openallay.builder.BuilderExtension'
                     || metadata.support.minimumJavaVersion != 8
                     || metadata.support.requiredHostFeatures != ['minecraft:world-access']
-                    || metadata.requirements.capabilities != ['openallay_builder:world_write']) {
+                    || metadata.requirements.keySet() != ['capabilities', 'extensions', 'skills'].toSet()
+                    || metadata.requirements.capabilities != []
+                    || metadata.requirements.extensions != []
+                    || metadata.requirements.skills != []) {
                 throw new GradleException('Universal Builder declaration mismatch')
             }
             def targets = metadata.support.targets
-            if (targets.collect { it.loader }.toSet() != ['fabric', 'neoforge'].toSet()
-                    || targets.any { it.minecraftVersionRange != '26.2'
-                        || it.openAllayVersionRange != '[0.4.1,)'
-                        || it.openAllayApiVersionRange != '[0.3.0,0.4.0)' }) {
+            def games = ['1.20.1', '1.20.2', '1.20.3', '1.20.4', '1.20.5', '1.20.6', '1.21', '1.21.1', '1.21.2', '1.21.3', '1.21.4', '1.21.5', '1.21.6', '1.21.7', '1.21.8', '1.21.9', '1.21.10', '1.21.11', '26.1', '26.1.1', '26.1.2', '26.2', '26.3']
+            def declaredTargets = targets.collect { [it.loader, it.minecraftVersionRange] }
+            def expectedTargets = ['fabric', 'neoforge'].collectMany { loader -> games.collect { game -> [loader, game] } }
+            if (declaredTargets.size() != expectedTargets.size()
+                    || declaredTargets.toSet() != expectedTargets.toSet()
+                    || targets.any { it.openAllayVersionRange != '[0.4.1,)'
+                        || it.openAllayApiVersionRange != '[0.4.0,0.5.0)' }) {
                 throw new GradleException('Universal Builder support coordinates mismatch')
             }
             ['building.js', 'presets.js', 'terrain.js', 'openallay_skills/minecraft-builder/SKILL.md'].each { path ->

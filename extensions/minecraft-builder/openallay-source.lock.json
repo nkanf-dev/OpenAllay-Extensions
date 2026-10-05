@@ -1,6 +1,6 @@
 {
   "repository": "nkanf-dev/OpenAllay",
-  "revision": "1e8132f7b1c287d0d65027118946f515869efcd2",
+  "revision": "5eb624ec1a52624dc4f3bd4c6d7253ae6d8411c1",
   "openAllayVersion": "0.4.1",
-  "openAllayApiVersion": "0.3.0"
+  "openAllayApiVersion": "0.4.0"
 }

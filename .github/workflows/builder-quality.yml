@@ -2,7 +2,7 @@ name: Shared Builder quality
 
 on:
   push:
-    branches: [main]
+    branches: [main, "mc/**"]
   pull_request:
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
           lock = json.loads(Path("extensions/minecraft-builder/openallay-source.lock.json").read_text())
           assert re.fullmatch(r"[0-9a-f]{40}", lock["revision"]), "Use an exact core commit"
           assert lock["repository"] == "nkanf-dev/OpenAllay"
-          assert lock["openAllayApiVersion"] == "0.3.0"
+          assert lock["openAllayApiVersion"] == "0.4.0"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for key in ("repository", "revision", "openAllayApiVersion"):
                   print(f"{key}={lock[key]}", file=output)
@@ -60,5 +60,5 @@ jobs:
         run: >-
           ./extensions/minecraft-builder/gradlew --no-daemon
           -p extensions/minecraft-builder
-          "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.3.0.jar"
+          "-PopenallayExtensionApiJar=${GITHUB_WORKSPACE}/.gradle/openallay-core/extension-api/build/libs/openallay-extension-api-0.4.0.jar"
           clean build

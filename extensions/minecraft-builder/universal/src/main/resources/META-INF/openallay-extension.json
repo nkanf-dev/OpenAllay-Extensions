@@ -11,15 +11,279 @@
     "targets": [
       {
         "loader": "fabric",
+        "minecraftVersionRange": "1.20.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.20.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.20.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.20.4",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.20.5",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.20.6",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.4",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.5",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.6",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.7",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.8",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.9",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.10",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "1.21.11",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "26.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "26.1.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "26.1.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
         "minecraftVersionRange": "26.2",
         "openAllayVersionRange": "[0.4.1,)",
-        "openAllayApiVersionRange": "[0.3.0,0.4.0)"
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "fabric",
+        "minecraftVersionRange": "26.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.4",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.5",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.20.6",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.4",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.5",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.6",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.7",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.8",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.9",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.10",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "1.21.11",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "26.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "26.1.1",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "26.1.2",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
       },
       {
         "loader": "neoforge",
         "minecraftVersionRange": "26.2",
         "openAllayVersionRange": "[0.4.1,)",
-        "openAllayApiVersionRange": "[0.3.0,0.4.0)"
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
+      },
+      {
+        "loader": "neoforge",
+        "minecraftVersionRange": "26.3",
+        "openAllayVersionRange": "[0.4.1,)",
+        "openAllayApiVersionRange": "[0.4.0,0.5.0)"
       }
     ],
     "minimumJavaVersion": 8,
@@ -29,9 +293,7 @@
     "validatedTargetIds": []
   },
   "requirements": {
-    "capabilities": [
-      "openallay_builder:world_write"
-    ],
+    "capabilities": [],
     "extensions": [],
     "skills": []
   }
