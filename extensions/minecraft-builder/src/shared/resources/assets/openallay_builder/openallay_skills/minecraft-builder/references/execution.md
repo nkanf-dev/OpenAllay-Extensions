@@ -2,13 +2,12 @@
 
 `building.open(options)` obtains a request-bound native session using the
 current online Minecraft connection. `dimension` selects the requested current
-live dimension; `seed` controls JS random choices. Opening and reads work in
-normal restricted JavaScript without JVM access. Block writes, undo, connection
-repair and native physics require the separate Builder world-write grant. The
-grant is off by default and belongs only to this Extension; installation, read
-access and unrestricted JavaScript do not grant it. The native context reports
-whether execution is available. No method opens region files, level.dat or an
-offline world save.
+live dimension; `seed` controls JS random choices. Enabling Minecraft Builder
+enables building, undo, connection repair and native physics. These operations,
+opening and reads work in normal restricted JavaScript without JVM access.
+The native host checks the active invocation, exact session, world lifetime
+and loaded chunks before owner-thread work. No method opens region files,
+level.dat or an offline world save.
 
 `status()` reports native session state and its journal. `finish()` explicitly
 completes the current journal and returns its native status. A successful tool
@@ -20,7 +19,7 @@ the online session; it is not an offline save operation.
 `undo(operationId?)` requests restoration of a journal in the same live world
 incarnation and dimension. World identity uses a live Minecraft SavedData UUID,
 not a filesystem path. Reads do not create that SavedData identity; the first
-authorized write or undo initializes it. `list_operations()` reads only an
+write or undo initializes it. `list_operations()` reads only an
 existing identity and returns no entries when none exists. Undo compares
 verified postimages before restoration.
 Changed cells are conflicts. Ambiguous pending intents from interrupted work
@@ -73,8 +72,6 @@ adapters. The backend contract requires JSON context/read/readPositions/write/wr
 transformState/updateConnections/syncPhysics, status/cancel/close/undo and template storage.
 It is not an offline-save adapter. Its context must provide the required native
 `materialPalette` roles for presets; tests must supply an explicit role fixture.
-Shared source targets SDK 0.3 and Java 8. The intended native candidate is
-Minecraft 26.2. These source targets do not establish successful compilation,
-packaging, game/loader acceptance, live-server permissions, loaded chunks,
-visual quality or loader lifecycle. Detached tests cover only their stated
-source contracts and fixture behavior.
+The shared Extension uses SDK 0.4.0 and Java 8. The host supplies the native
+Minecraft adapter; package support targets Minecraft 26.2 Fabric and NeoForge.
+All game operations use the bound live session and native registry.

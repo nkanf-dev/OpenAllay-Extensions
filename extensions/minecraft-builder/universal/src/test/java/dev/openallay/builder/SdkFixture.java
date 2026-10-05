@@ -30,8 +30,6 @@ final class SdkFixture {
         final Instant captured = Instant.now();
         boolean cancelled;
         boolean successful;
-        boolean writesAllowed;
-        int writeGateChecks;
         @Override public String extensionId() { return "openallay:builder"; }
         @Override public String correlationId() { return "builder-sdk-fixture"; }
         @Override public Instant capturedAt() { return captured; }
@@ -50,13 +48,6 @@ final class SdkFixture {
             cancelled = true;
             for (Runnable listener : new ArrayList<Runnable>(cancellationListeners)) listener.run();
         }
-        @Override public boolean hasCapability(String id) {
-            return writesAllowed && BuilderBindings.WORLD_WRITE.equals(id);
-        }
-        @Override public void requireCapability(String id) {
-            writeGateChecks++;
-            if (!hasCapability(id)) throw new ExtensionException("capability_denied", "Fixture write grant absent");
-        }
         @Override public boolean completedSuccessfully() { return successful; }
         @Override public void recordEvidence(ExtensionEvidence value) { evidence.add(value); }
     }
@@ -71,7 +62,7 @@ final class SdkFixture {
         boolean returnsNullWorld;
         Host(World world) { this.world = world; }
         @Override public ExtensionEnvironment environment() {
-            return new ExtensionEnvironment("fabric", "1.20.1", "0.4.1", FixtureValues.set("0.3.0"),
+            return new ExtensionEnvironment("fabric", "1.20.1", "0.4.1", FixtureValues.set("0.4.0"),
                     8, FixtureValues.set("minecraft:world-access"));
         }
         @Override public MinecraftWorldAccess minecraftWorldAccess() {
@@ -183,7 +174,7 @@ final class SdkFixture {
             return apply(x, y, z, state, before);
         }
         private WriteOutcome apply(int x, int y, int z, String state, String before) {
-            active(); invocation.requireCapability(BuilderBindings.WORLD_WRITE);
+            active();
             BlockPosition p = position(x, y, z);
             String previous = blocks.getOrDefault(p, BuilderSessionTest.AIR);
             if (before != null && !before.equals(previous))
@@ -204,14 +195,14 @@ final class SdkFixture {
             return repairIntended == null ? null : new RepairOutcome(repairBefore, repairIntended);
         }
         @Override public void notifyNeighbours(int x, int y, int z) {
-            active(); invocation.requireCapability(BuilderBindings.WORLD_WRITE); notifications++; position(x, y, z);
+            active(); notifications++; position(x, y, z);
         }
         @Override public String context() {
             active(); return "{\"minY\":-64,\"maxY\":320,\"version\":\"1.20.1\"}";
         }
         @Override public String dimension() { active(); return "minecraft:overworld"; }
         @Override public String worldId() {
-            active(); invocation.requireCapability(BuilderBindings.WORLD_WRITE);
+            active();
             if (!identityExists) { identityExists = true; worldIdentityCreates++; }
             return "sdk-fixture-world";
         }

@@ -238,11 +238,9 @@ IDs with linked-state registry prechecks before terrain changes.
 | `white_concrete` | `minecraft:white_concrete` | Native default properties |
 | `white_wool` | `minecraft:white_wool` | Native default properties |
 
-## Acceptance boundary
+## Native materials
 
-Shared source targets Extension SDK 0.3 and Java 8. Minecraft 26.2 is the intended
-native candidate only. This copy does not claim a validated game/loader target
-or support for older Minecraft registries. Detached fixture assertions cover
-material-role lookup, preflight failures, custom property preservation and
-shared geometry contracts. Actual native registry, loader lifecycle, final
-readback, supports and visual acceptance remain separate evidence.
+The shared Extension uses SDK 0.4.0 and Java 8. Its package targets Minecraft 26.2
+Fabric and NeoForge. Presets use the connected host's exact native material roles.
+Native validation checks IDs and properties before placement; readback and
+journal status report the applied result.

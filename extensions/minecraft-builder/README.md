@@ -1,9 +1,8 @@
 # Minecraft Builder Extension
 
-Builder **0.3.0** is one native-neutral Extension JAR using **Extension API 0.3.0**.
-Its production classes target **Java 8**. The same final payload has run on Java 8 and
-Java 25 with an older host Gson present, and on actual Minecraft **26.2 Fabric and
-NeoForge** development hosts with real native world adapters.
+Builder **0.4.0** is one native-neutral Extension JAR using **Extension API 0.4.0**.
+Its production classes target **Java 8**. One universal payload serves the supported
+Minecraft **26.2 Fabric and NeoForge** hosts through their native world adapters.
 
 ## One package, stable host
 
@@ -13,14 +12,14 @@ are supplied by core `MinecraftWorldAccess` / `WorldSession` adapters. The Exten
 has no Minecraft or loader class dependency and no per-game loader entrypoint.
 Gson 2.14 is relocated privately; SDK and game classes are not bundled.
 
-Build the pinned public SDK, then use the checked-in wrapper:
+Build the compatible public SDK, then use the checked-in wrapper:
 
 ```text
 /path/to/OpenAllay/gradlew -p /path/to/OpenAllay :extension-api:jar
-./gradlew -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.3.0.jar build
+./gradlew -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.4.0.jar build
 ```
 
-Output: `universal/build/libs/openallay-builder-universal-0.3.0.jar`.
+Output: `universal/build/libs/openallay-builder-universal-0.4.0.jar`.
 `verifyUniversalPackage` checks Java 8 classfiles, the exact external support manifest,
 private JSON dependency isolation, canonical resources and absence of native/loader/SDK
 classes. The thin JAR is not the distributable package.
@@ -33,15 +32,15 @@ and its pinned development core are separate from that immutable release.
 ## Authority and lifecycle
 
 The host advertises `minecraft:world-access` only when its native adapter exists.
-This is availability, not a permission grant. Opening Builder is lazy and binds the
-exact active player/connection/integrated world through the invocation-owned SDK.
-Read access does not create a world identity. World writes require the separate
-`openallay_builder:world_write` grant, off by default and frozen per request. A later
-settings change does not expand an already captured request.
+Enabling Minecraft Builder enables its building operations. Opening Builder is lazy
+and binds the exact active player, connection and integrated world through the
+invocation-owned SDK. Read access does not create a world identity. The first write
+or undo initializes that identity. These operations work in restricted JavaScript
+without Agent JVM access.
 
 Native work runs on the game owner. Scripts and artifact IO remain on their worker.
-Queued work rechecks identity, scope and grants. Closing stops queued operations; it
-is not an implicit world rollback. A changed write with unavailable readback keeps its
+Queued work rechecks invocation lifetime, exact identity, world lifetime and loaded
+chunks. Closing stops queued operations; it is not an implicit world rollback. A changed write with unavailable readback keeps its
 durable pending intent and original failure, not fabricated air or success.
 
 ## Modules and artifacts
@@ -64,20 +63,24 @@ matching after-images. Later edits report conflicts. Opaque block-entity SNBT pr
 actual native data; unsupported transforms fail rather than inventing orientation.
 The journal is not a whole-world/entity backup or an atomic transaction.
 
-## Current validation
+## Universal architecture evidence
+
+The prior Builder 0.3.0 payload established the universal-package baseline:
 
 - 211 shared detached domain/storage/JavaScript fixture tests passed.
 - One privately shaded JAR ran unchanged on Java 8 and Java 25 with official Gson 2.8.0
   in the parent; all 318 production/dependency classes were major 52.
-- Both actual 26.2 clients loaded that same JAR through normal discovery and ran five
-  registered restricted Tool calls: default read, denied write, frozen denial after a
-  later grant, batch build/template/finish, and journal undo. Independent native owner
-  readback verified all seven cells and the diamond chest SNBT were restored. Framework
-  shutdown released scopes and classloaders.
-- Native codec/transform/SavedData/connection tests moved to the core adapter module;
+- Both actual 26.2 development clients loaded that JAR through normal discovery.
+  Restricted Tool calls exercised reads, batch build/template/finish and journal undo.
+  Independent native owner readback verified all seven cells and the diamond chest
+  SNBT were restored. Framework shutdown released scopes and classloaders.
+- Native codec/transform/SavedData/connection tests live in the core adapter module;
   canonical preset emitted states are cross-checked with its real registry.
 
-Actual game-native acceptance currently covers 26.2 Fabric and NeoForge only. Stock
-Forge 1.12.2 and other old/new versions are priority adapter/runtime work, not support
-claims created by Java 8 bytecode alone. Cancellation during a write, connection or
-dimension replacement and remote server behavior require their own native tests.
+Builder 0.4.0 removes the Extension-private write gate and uses public SDK 0.4.0.
+Its contract tests cover enabled restricted-JavaScript reads/writes and real
+closed, cancelled and foreign-invocation rejection, with journal outcomes unchanged.
+
+Package support remains 26.2 Fabric and NeoForge only. Stock Forge 1.12.2 and
+other game versions need their own native adapter/runtime acceptance. Java 8
+bytecode is portability, not a broader Minecraft support declaration.

@@ -2,8 +2,7 @@
 name: minecraft-builder
 description: Use when building structures, shaping terrain, laying paths, decorating, or copying structures in the current Minecraft world.
 metadata:
-  openallay/version: "0.3.0"
-  openallay/requires-capabilities: "openallay_builder:world_write"
+  openallay/version: "0.4.0"
   openallay/requires-extensions: "openallay:builder"
 allowed-tools: "openallay:run_javascript"
 ---
@@ -16,10 +15,9 @@ for contiguous reads, and `get_blocks` for selected positions. The Extension
 supplies native block validation, world-thread writes, connection updates,
 typed block entities, templates, and undo journals.
 
-The shared source targets Extension SDK 0.3 and Java 8. Minecraft 26.2 is the
-intended native candidate, not a validated release claim. This source does not
-establish support for other game versions or loaders. The connected native
-registry and `context().materialPalette` define available preset materials.
+The Extension uses SDK 0.4.0 and Java 8. Its package targets Minecraft 26.2
+Fabric and NeoForge. The connected native registry and
+`context().materialPalette` define available preset materials.
 A missing role fails as `material_unavailable` before that preset writes.
 Use exact registered IDs/properties for custom preset materials; do not invent
 aliases or drop unavailable properties.
@@ -42,9 +40,9 @@ Load a reference when its operation details are needed:
 [templates](references/templates.md) for copying and persistence;
 and [execution](references/execution.md) for online lifecycle and undo.
 
-Requirements metadata is advisory. Normal JavaScript can open and read the
-active integrated-server world without JVM access. World-changing methods need
-the separate Builder world-write grant; installation and read access do not
-provide it. Actual methods enforce invocation lifetime and write authorization.
-Nothing edits offline saves. Distinguish completed writes, cancellation, partial failure, and undo
-results using the returned native status.
+Enabling Minecraft Builder enables its building operations. Normal restricted
+JavaScript can open, read and build in the active integrated-server world
+without JVM access. Native methods enforce the active invocation, exact session,
+loaded chunks and world lifetime. Nothing edits offline saves. Use the returned
+native status to distinguish completed writes, cancellation, partial failure
+and undo results.

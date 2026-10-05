@@ -3,7 +3,7 @@
 The `openallay_builder:terrain` ES5 CommonJS module exports `install(api, util)`.
 The public `openallay_builder:building` module installs it on each builder session.
 Use `builder = require("openallay_builder:building").open(options)` through the
-Extension's normal authorized online session. These functions never edit save files.
+Extension's active, invocation-owned online session. These functions never edit save files.
 
 ## Shared rules
 

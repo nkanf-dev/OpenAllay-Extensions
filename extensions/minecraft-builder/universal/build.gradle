@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'dev.openallay.extensions'
-version = '0.3.0'
+version = '0.4.0'
 repositories { mavenCentral() }
 
 java {
@@ -19,7 +19,7 @@ tasks.withType(JavaCompile).configureEach {
 
 def sdkJarPath = providers.gradleProperty('openallayExtensionApiJar')
 if (!sdkJarPath.isPresent()) {
-    throw new GradleException('Set -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.3.0.jar')
+    throw new GradleException('Set -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.4.0.jar')
 }
 def sdkJar = file(sdkJarPath.get())
 dependencies {

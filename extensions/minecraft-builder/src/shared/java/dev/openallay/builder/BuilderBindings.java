@@ -5,7 +5,6 @@ import static dev.openallay.api.extension.JavascriptHostValueType.STRING;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
-import dev.openallay.api.extension.ExtensionCapability;
 import dev.openallay.api.extension.JavascriptHostBinding;
 import dev.openallay.api.extension.JavascriptHostMethod;
 import dev.openallay.api.extension.JavascriptHostValueType;
@@ -13,59 +12,47 @@ import dev.openallay.api.extension.ExtensionInvocation;
 import dev.openallay.api.extension.ExtensionException;
 import java.util.List;
 import java.util.Arrays;
-import java.util.Collections;
 import com.google.gson.JsonParser;
-import java.util.Set;
 
-/** Detached public methods; native world-write authority is never inherited by the Agent. */
+/** Detached public methods. Enabled Builder uses invocation-owned native world access without Agent JVM access. */
 final class BuilderBindings {
     static final String MODULE = "openallay_builder:native";
-    static final String WORLD_WRITE = "openallay_builder:world_write";
     private BuilderBindings() {}
-
-    static ExtensionCapability capability() {
-        return new ExtensionCapability(WORLD_WRITE, "Builder world writes",
-                "Allow Minecraft Builder to change the active integrated-server world, undo blocks, "
-                        + "repair connection shapes and notify native physics. Does not grant Agent JVM access or remote-server writes.");
-    }
 
     static JavascriptHostBinding binding() {
         return new JavascriptHostBinding(MODULE, Arrays.asList(
-                method("open", false, (context, args) -> text(BuilderRuntime.open(context, string(args, 0))), STRING),
-                method("context", false, (context, args) -> text(session(context, args).context()), STRING),
-                method("read", false, (context, args) -> text(session(context, args).read(integer(args, 1), integer(args, 2), integer(args, 3))), STRING, INTEGER, INTEGER, INTEGER),
-                method("readPositions", false, (context, args) -> text(session(context, args).readPositions(string(args, 1))), STRING, STRING),
-                method("readRegion", false, (context, args) -> text(session(context, args).readRegion(string(args, 1))), STRING, STRING),
-                method("scanColumns", false, (context, args) -> text(session(context, args).scanColumns(string(args, 1))), STRING, STRING),
-                method("probeColumns", false, (context, args) -> text(session(context, args).probeColumns(string(args, 1))), STRING, STRING),
-                method("write", true, (context, args) -> text(session(context, args).write(integer(args, 1), integer(args, 2), integer(args, 3), string(args, 4))), STRING, INTEGER, INTEGER, INTEGER, STRING),
-                method("writeRegion", true, (context, args) -> text(session(context, args).writeRegion(string(args, 1))), STRING, STRING),
-                method("transformState", false, (context, args) -> text(session(context, args).transformState(string(args, 1), integer(args, 2), string(args, 3))), STRING, STRING, INTEGER, STRING),
-                method("updateConnections", true, (context, args) -> text(session(context, args).updateConnections(string(args, 1))), STRING, STRING),
-                method("syncPhysics", true, (context, args) -> text(session(context, args).syncPhysics(string(args, 1))), STRING, STRING),
+                method("open", (context, args) -> text(BuilderRuntime.open(context, string(args, 0))), STRING),
+                method("context", (context, args) -> text(session(context, args).context()), STRING),
+                method("read", (context, args) -> text(session(context, args).read(integer(args, 1), integer(args, 2), integer(args, 3))), STRING, INTEGER, INTEGER, INTEGER),
+                method("readPositions", (context, args) -> text(session(context, args).readPositions(string(args, 1))), STRING, STRING),
+                method("readRegion", (context, args) -> text(session(context, args).readRegion(string(args, 1))), STRING, STRING),
+                method("scanColumns", (context, args) -> text(session(context, args).scanColumns(string(args, 1))), STRING, STRING),
+                method("probeColumns", (context, args) -> text(session(context, args).probeColumns(string(args, 1))), STRING, STRING),
+                method("write", (context, args) -> text(session(context, args).write(integer(args, 1), integer(args, 2), integer(args, 3), string(args, 4))), STRING, INTEGER, INTEGER, INTEGER, STRING),
+                method("writeRegion", (context, args) -> text(session(context, args).writeRegion(string(args, 1))), STRING, STRING),
+                method("transformState", (context, args) -> text(session(context, args).transformState(string(args, 1), integer(args, 2), string(args, 3))), STRING, STRING, INTEGER, STRING),
+                method("updateConnections", (context, args) -> text(session(context, args).updateConnections(string(args, 1))), STRING, STRING),
+                method("syncPhysics", (context, args) -> text(session(context, args).syncPhysics(string(args, 1))), STRING, STRING),
                 voidMethod("saveTemplate", (context, args) -> session(context, args).saveTemplate(string(args, 1), string(args, 2)), STRING, STRING, STRING),
-                method("loadTemplate", false, (context, args) -> text(session(context, args).loadTemplate(string(args, 1))), STRING, STRING),
-                method("listTemplates", false, (context, args) -> text(session(context, args).listTemplates()), STRING),
-                method("listOperations", false, (context, args) -> text(session(context, args).listOperations()), STRING),
-                method("status", false, (context, args) -> text(session(context, args).status()), STRING),
-                method("finish", false, (context, args) -> text(session(context, args).finish()), STRING),
+                method("loadTemplate", (context, args) -> text(session(context, args).loadTemplate(string(args, 1))), STRING, STRING),
+                method("listTemplates", (context, args) -> text(session(context, args).listTemplates()), STRING),
+                method("listOperations", (context, args) -> text(session(context, args).listOperations()), STRING),
+                method("status", (context, args) -> text(session(context, args).status()), STRING),
+                method("finish", (context, args) -> text(session(context, args).finish()), STRING),
                 voidMethod("cancel", (context, args) -> session(context, args).cancel(), STRING),
                 voidMethod("close", (context, args) -> session(context, args).close(), STRING),
-                method("undo", true, (context, args) -> {
+                method("undo", (context, args) -> {
                     BuilderSession session = session(context, args);
                     String operationId = string(args, 1);
                     return text(operationId.isEmpty() ? session.undo() : session.undo(operationId));
                 }, STRING, STRING)));
     }
 
-    private static JavascriptHostMethod method(String name, boolean write,
+    private static JavascriptHostMethod method(String name,
             JavascriptHostMethod.Invoker invoker, JavascriptHostValueType... parameters) {
-        Set<String> capabilities = write ? Collections.singleton(WORLD_WRITE) : Collections.<String>emptySet();
         return new JavascriptHostMethod(name, Arrays.asList(parameters), JavascriptHostValueType.STRING,
-                capabilities, (context, args) -> {
+                (context, args) -> {
                     context.requireActive();
-                    // The public bridge also gates this method; keep the native handler's own gate.
-                    if (write) context.requireCapability(WORLD_WRITE);
                     try { return invoker.invoke(context, args); }
                     catch (BuilderException failure) { throw publicFailure(failure); }
                     catch (ExtensionException failure) { throw publicFailure(new BuilderException(failure.code(), "Native host operation failed")); }
@@ -74,7 +61,7 @@ final class BuilderBindings {
     }
 
     private static JavascriptHostMethod voidMethod(String name, VoidInvoker invoker, JavascriptHostValueType... parameters) {
-        return new JavascriptHostMethod(name, Arrays.asList(parameters), JavascriptHostValueType.NULL, Collections.<String>emptySet(),
+        return new JavascriptHostMethod(name, Arrays.asList(parameters), JavascriptHostValueType.NULL,
                 (context, args) -> {
                     context.requireActive();
                     try { invoker.invoke(context, args); return "null"; }

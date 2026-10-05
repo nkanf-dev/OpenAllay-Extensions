@@ -226,7 +226,6 @@ class BuilderRuntimeTest {
 
     @Test void hostHandlersParseExactJsonScalarsBeforeDispatchAndPreserveStatePayload() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         try (AutoCloseable scope = BuilderRuntime.install(invocation, new SdkFixture.Host(world))) {
             String id = JsonParser.parseString(method("open").invoker().invoke(invocation,
@@ -257,21 +256,67 @@ class BuilderRuntimeTest {
         assertTrue(operation.entries().get(0).verified().blockEntity().contains("custom:gem"));
     }
 
-    @Test void readonlyHostHandlersCannotEnterWritePreparationOrCreateWorldIdentity() throws Exception {
+    @Test void closedHostSessionCannotEnterWritePreparationOrCreateWorldIdentity() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         try (AutoCloseable scope = BuilderRuntime.install(invocation, new SdkFixture.Host(world))) {
             String id = BuilderRuntime.open(invocation, "{}");
+            method("close").invoker().invoke(invocation, FixtureValues.list(jsonString(id)));
             ExtensionException failure = assertThrows(ExtensionException.class,
                     () -> method("write").invoker().invoke(invocation,
                             FixtureValues.list(jsonString(id), "0", "1", "0", jsonString(BuilderSessionTest.STONE))));
-            assertEquals("capability_denied", failure.code());
+            assertEquals("session_closed", failure.code());
             assertEquals(0, world.calls);
             assertEquals(0, world.previews);
             assertEquals(0, world.writes);
             assertEquals(0, world.worldIdentityCreates);
+        }
+        assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
+    }
+
+    @Test void cancelledHostInvocationRejectsEveryHandlerBeforeParsingOrNativeWork() throws Exception {
+        SdkFixture.Invocation invocation = new SdkFixture.Invocation();
+        SdkFixture.World world = new SdkFixture.World(directory, invocation);
+        try (AutoCloseable scope = BuilderRuntime.install(invocation, new SdkFixture.Host(world))) {
+            BuilderRuntime.open(invocation, "{}");
+            invocation.cancel();
+            for (JavascriptHostMethod hostMethod : BuilderBindings.binding().methods()) {
+                ExtensionException failure = assertThrows(ExtensionException.class,
+                        () -> hostMethod.invoker().invoke(invocation, java.util.Collections.<String>emptyList()),
+                        hostMethod.name());
+                assertEquals("cancelled", failure.code(), hostMethod.name());
+            }
+            assertEquals(0, world.calls);
+            assertEquals(0, world.previews);
+            assertEquals(0, world.writes);
+            assertEquals(0, world.worldIdentityCreates);
+            assertTrue(invocation.evidence.isEmpty());
+        }
+        assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
+    }
+
+    @Test void foreignInvocationCannotBorrowHostSessionForReadsOrWrites() throws Exception {
+        SdkFixture.Invocation invocation = new SdkFixture.Invocation();
+        SdkFixture.World world = new SdkFixture.World(directory, invocation);
+        try (AutoCloseable scope = BuilderRuntime.install(invocation, new SdkFixture.Host(world))) {
+            String id = BuilderRuntime.open(invocation, "{}");
+            SdkFixture.Invocation foreign = new SdkFixture.Invocation();
+            assertEquals(invocation.extensionId(), foreign.extensionId());
+            ExtensionException readFailure = assertThrows(ExtensionException.class,
+                    () -> method("read").invoker().invoke(foreign,
+                            FixtureValues.list(jsonString(id), "0", "1", "0")));
+            ExtensionException writeFailure = assertThrows(ExtensionException.class,
+                    () -> method("write").invoker().invoke(foreign,
+                            FixtureValues.list(jsonString(id), "0", "1", "0", jsonString(BuilderSessionTest.STONE))));
+            assertEquals("invocation_required", readFailure.code());
+            assertEquals("invocation_required", writeFailure.code());
+            assertEquals(0, world.calls);
+            assertEquals(0, world.previews);
+            assertEquals(0, world.writes);
+            assertEquals(0, world.worldIdentityCreates);
+            assertTrue(invocation.evidence.isEmpty());
+            assertTrue(foreign.evidence.isEmpty());
             assertEquals(BuilderSessionTest.AIR, BuilderRuntime.session(invocation, id).read(0, 1, 0));
-            assertEquals(1, invocation.writeGateChecks);
         }
         assertTrue(new OperationJournal(directory.resolve("journals")).list().isEmpty());
     }
@@ -364,7 +409,6 @@ class BuilderRuntimeTest {
 
     @Test void sdkChangedWriteWithMissingReadbackKeepsPendingIntentAndPublicFailureCode() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         world.missingReadback = true;
         world.writeFailure = new ExtensionException("chunk_unavailable", "Fixture target readback unavailable");
@@ -398,7 +442,6 @@ class BuilderRuntimeTest {
 
     @Test void sdkMissingReadbackWithoutNativeFailureStillFailsUnobservedAndNeverVerifiesIntent() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         world.missingReadback = true;
         try (AutoCloseable scope = BuilderRuntime.install(invocation, new SdkFixture.Host(world))) {
@@ -427,7 +470,6 @@ class BuilderRuntimeTest {
 
     @Test void sdkUndoMissingReadbackCountsChangedWriteButLeavesUndoIntentPending() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         String originalId;
         String undoId;
@@ -473,7 +515,6 @@ class BuilderRuntimeTest {
 
     @Test void sdkChangedWriteFailureKeepsActualJournalAndStablePublicCode() throws Exception {
         SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
         SdkFixture.World world = new SdkFixture.World(directory, invocation);
         world.afterWriteState = BuilderSessionTest.DIRT;
         world.writeFailure = new ExtensionException("placement_failed", "synthetic-private-hook", new IllegalStateException("private-cause"));

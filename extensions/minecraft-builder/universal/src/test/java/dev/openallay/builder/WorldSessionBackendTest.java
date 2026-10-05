@@ -12,14 +12,8 @@ import org.junit.jupiter.api.io.TempDir;
 class WorldSessionBackendTest {
     @TempDir Path directory;
 
-    private SdkFixture.Invocation writable() {
-        SdkFixture.Invocation invocation = new SdkFixture.Invocation();
-        invocation.writesAllowed = true;
-        return invocation;
-    }
-
     @Test void changedWriteFailureRetainsActualDetachedReadbackAndFailureCode() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         world.afterWriteState = BuilderSessionTest.DIRT;
         ExtensionException nativeFailure = new ExtensionException("placement_failed", "Fixture write hook failed");
         world.writeFailure = nativeFailure;
@@ -37,7 +31,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void unavailableReadbackNeverBecomesFabricatedAirOrSuccessfulWrite() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         world.missingReadback = true;
         world.writeFailure = new ExtensionException("chunk_unavailable", "Fixture readback became unavailable");
         BuilderBackend.WriteOutcome outcome = new WorldSessionBackend(world)
@@ -49,7 +43,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void noOpAndCompareConflictKeepChangedFalseAndOriginalState() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         BlockPosition position = new BlockPosition(0, 64, 0);
         world.blocks.put(position, BuilderSessionTest.DIRT);
         WorldSessionBackend backend = new WorldSessionBackend(world);
@@ -67,7 +61,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void nonSdkWriteFailureIdentityIsRetainedRatherThanTranslatedToSuccess() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         RuntimeException hookFailure = new IllegalStateException("Fixture hook failure");
         world.writeFailure = hookFailure;
         BuilderBackend.WriteOutcome outcome = new WorldSessionBackend(world)
@@ -78,7 +72,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void repairKeepsBothFullOpaqueImagesAndNullMeansNoChange() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         WorldSessionBackend backend = new WorldSessionBackend(world);
         BlockPosition position = new BlockPosition(15, 64, -17);
         assertNull(backend.repair(position));
@@ -93,7 +87,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void readsProofsTerrainAndTransformsUseExactCoordinatesAndDetachedStates() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         WorldSessionBackend backend = new WorldSessionBackend(world);
         BlockPosition position = new BlockPosition(-17, 64, 33);
         String chest = "{\"id\":\"custom:storage\",\"properties\":{\"variant\":\"damp\"},\"blockEntity\":\"{Items:[]}\"}";
@@ -121,7 +115,7 @@ class WorldSessionBackendTest {
     }
 
     @Test void ownerDispatchTranslatesSdkFailureAndCloseReachesNativeSessionExactlyOnce() {
-        SdkFixture.World world = new SdkFixture.World(directory, writable());
+        SdkFixture.World world = new SdkFixture.World(directory, new SdkFixture.Invocation());
         WorldSessionBackend backend = new WorldSessionBackend(world);
         world.deadline = 123L;
         assertEquals(123L, backend.sliceDeadline());
