@@ -27,6 +27,69 @@ class BuilderSessionTest {
     BuilderSession session(Backend backend) { return new BuilderSession(invocation,backend,new OwnerThreadBridge(() -> {}, () -> false),"{}"); }
     static JsonObject status(BuilderSession session) { return JsonParser.parseString(session.status()).getAsJsonObject(); }
 
+    @Test void conflictWitnessCoversAllThreeGatesWithoutChangingRejectionOrJournals() throws Exception {
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(ConflictDiagnostic.LOGGER_NAME);
+        List<String> messages = new ArrayList<>();
+        java.util.logging.Handler handler = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) { messages.add(record.getMessage()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            Backend success = new Backend(directory.resolve("success"));
+            BuilderSession successful = session(success);
+            successful.write(0,1,0,STONE); successful.finish();
+            assertTrue(messages.isEmpty());
+
+            Backend preflight = new Backend(directory.resolve("preflight"));
+            preflight.blocks.put(new BlockPosition(0,1,0),DIRT);
+            BuilderSession planned = session(preflight);
+            planned.context(); // Reuse the existing admitted dimension capture, not a diagnostic native call.
+            assertEquals("concurrent_edit",assertThrows(BuilderException.class,() -> planned.writeRegion(
+                    "[{\"x\":0,\"y\":1,\"z\":0,\"state\":"+AIR+",\"expectedBefore\":"+STONE+"}]")).code());
+            assertEquals(0,preflight.writeCount);
+            assertTrue(new OperationJournal(preflight.path.resolve("journals")).list().isEmpty());
+            assertWitness(messages.get(0),"write-preflight",STONE,AIR,DIRT,false);
+            assertFalse(status(planned).toString().contains(ConflictDiagnostic.PREFIX));
+            assertFalse(status(planned).toString().contains("sha256"));
+
+            Backend apply = new Backend(directory.resolve("apply")); apply.raceBeforeApply=true;
+            BuilderSession committing = session(apply);
+            assertEquals("concurrent_edit",assertThrows(BuilderException.class,() -> committing.write(0,1,0,DIRT)).code());
+            assertEquals(0,apply.writeCount); assertEquals(STONE,apply.blocks.get(new BlockPosition(0,1,0)));
+            OperationJournal.Snapshot failed = new OperationJournal(apply.path.resolve("journals")).list().get(0);
+            assertEquals(OperationJournal.Status.FAILED,failed.status()); assertTrue(failed.entries().isEmpty());
+            assertWitness(messages.get(1),"write-apply",AIR,DIRT,STONE,true);
+            assertThrows(BuilderException.class,committing::finish);
+            invocation.success=false; committing.closeAfterInvocation();
+            assertEquals(2,messages.size()); // Nested failure and cleanup never emit twice.
+
+            Backend physics = new Backend(directory.resolve("physics")); physics.raceOnRead=28;
+            BuilderSession notifying = session(physics);
+            assertEquals("concurrent_edit",assertThrows(BuilderException.class,() -> notifying.syncPhysics(BOUNDS)).code());
+            assertEquals(0,physics.notifyCount); assertEquals(0,physics.writeCount);
+            assertWitness(messages.get(2),"physics-pre-notify",AIR,AIR,STONE,false);
+            assertTrue(new OperationJournal(physics.path.resolve("journals")).list().isEmpty());
+            assertEquals(3,messages.size());
+        } finally { logger.removeHandler(handler); }
+    }
+    private static void assertWitness(String message, String phase, String before, String intended, String current, boolean operation) {
+        assertTrue(message.startsWith(ConflictDiagnostic.PREFIX));
+        JsonObject witness=JsonParser.parseString(message.substring(ConflictDiagnostic.PREFIX.length())).getAsJsonObject();
+        assertEquals("concurrent_edit",witness.get("code").getAsString());
+        assertEquals(phase,witness.get("phase").getAsString());
+        assertEquals(before,witness.getAsJsonObject("before").get("json").getAsString());
+        assertEquals(intended,witness.getAsJsonObject("intended").get("json").getAsString());
+        assertEquals(current,witness.getAsJsonObject("current").get("json").getAsString());
+        assertEquals(operation,witness.getAsJsonObject("operationId").get("available").getAsBoolean());
+        if(operation) {
+            assertEquals("test-world",witness.getAsJsonObject("worldId").get("json").getAsString());
+            assertEquals("minecraft:overworld",witness.getAsJsonObject("dimension").get("json").getAsString());
+        }
+        assertFalse(witness.has("label")); assertFalse(witness.has("stack")); assertFalse(witness.has("cause"));
+    }
+
     @Test void explicitDimensionMismatchFailsBeforeArtifactCreation() {
         Backend backend = new Backend(directory.resolve("absent"));
         assertThrows(BuilderException.class, () -> new BuilderSession(invocation,backend,new OwnerThreadBridge(() -> {},()->false),"{\"dimension\":\"minecraft:the_nether\"}"));

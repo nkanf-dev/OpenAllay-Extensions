@@ -75,6 +75,7 @@ final class BuilderRuntime {
         @Override public boolean cancelled() { return context.isCancelled(); }
         @Override public boolean completedSuccessfully() { return context.completedSuccessfully(); }
         @Override public void evidence(ExtensionEvidence evidence) { context.recordEvidence(evidence); }
+        @Override public String correlationId() { return context.correlationId(); }
         @Override public String loader() { return host.environment().loader(); }
         @Override public String gameVersion() { return host.environment().minecraftVersion(); }
         @Override public void close() {

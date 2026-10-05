@@ -43,6 +43,9 @@ public final class BuilderSession implements AutoCloseable {
     private long writes;
     private boolean closed;
     private boolean cancelled;
+    private String diagnosticWorldId;
+    private String diagnosticDimension;
+    private ConflictDiagnostic conflictDiagnostic;
 
     BuilderSession(SessionInvocation frame, BuilderBackend binding, OwnerThreadBridge bridge, String optionsJson) {
         this.frame = frame;
@@ -273,7 +276,7 @@ public final class BuilderSession implements AutoCloseable {
                     if (!result.isEmpty() && System.nanoTime() >= deadline) break;
                     BlockPosition pos = pos(command.position());
                     String before = readOwner(pos);
-                    ExpectedImage.requireUnchanged(command.expectedBefore(), before, command.position().toString());
+                    requireUnchanged(command.expectedBefore(), before, command.position(), command.state(), "write-preflight");
                     String intended = binding.preview(pos, command.state());
                     result.add(new Prepared(command.position(), before, intended));
                 }
@@ -318,7 +321,7 @@ public final class BuilderSession implements AutoCloseable {
                                 try {
                                     BlockPosition pos = pos(command.position());
                                     String current = readOwner(pos);
-                                    ExpectedImage.requireUnchanged(command.before(), current, command.position().toString());
+                                    requireUnchanged(command.before(), current, command.position(), command.intended(), "write-apply");
                                     attempted = true;
                                     BuilderBackend.WriteOutcome outcome = binding.write(pos, command.intended(), current);
                                     applied.add(new Applied(command.position(), outcome.actual(), outcome.changed()));
@@ -456,7 +459,7 @@ public final class BuilderSession implements AutoCloseable {
                 int admitted=0;
                 for(Prepared value:captures) {
                     if(admitted>0 && System.nanoTime()>=deadline) break;
-                    ExpectedImage.requireUnchanged(value.before(),readOwner(pos(value.position())),value.position().toString());
+                    requireUnchanged(value.before(),readOwner(pos(value.position())),value.position(),value.intended(),"physics-pre-notify");
                     admitted++;
                 }
                 int processed=0;
@@ -669,11 +672,31 @@ public final class BuilderSession implements AutoCloseable {
         finally { closed = true; }
     }
 
-    private void begin() throws IOException { if (operation == null) operation = journal.begin(binding.worldId(),binding.dimension(),label); }
+    private void begin() throws IOException {
+        if (operation == null) {
+            String worldId = binding.worldId(), dimension = binding.dimension();
+            operation = journal.begin(worldId,dimension,label);
+            diagnosticWorldId = worldId; diagnosticDimension = dimension;
+        }
+    }
+    private void requireUnchanged(String before, String current, BlockPosition position, String intended, String phase) {
+        try { ExpectedImage.requireUnchanged(before,current,position.toString()); }
+        catch (BuilderException failure) {
+            if ("concurrent_edit".equals(failure.code()) && conflictDiagnostic == null) {
+                try {
+                    conflictDiagnostic = new ConflictDiagnostic(phase,position,before,intended,current,
+                            frame.correlationId(),operation == null ? null : operation.id(),diagnosticWorldId,
+                            diagnosticDimension,binding.isOwnerThread(),Thread.currentThread() == worker);
+                } catch (RuntimeException ignored) { /* Preserve the actual optimistic rejection. */ }
+            }
+            throw failure;
+        }
+    }
     private void completeOperation() throws IOException {
         if (operation != null) { OutcomePersistence.run(() -> operation.finish(OperationJournal.Status.COMPLETED, "All journaled writes have server readback")); lastOperation = operation.id(); operation = null; }
     }
     private void failed(RuntimeException failure) {
+        if (conflictDiagnostic != null) conflictDiagnostic.emit();
         detail = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         boolean revoked = frame.cancelled() || cancelled || Thread.currentThread().isInterrupted();
         state = SessionLifecycle.failed(revoked, writes, operation != null && operation.hasEntries());
@@ -690,7 +713,9 @@ public final class BuilderSession implements AutoCloseable {
         boolean sliced = action.equals("terrain-probe") || action.equals("read-region") || action.equals("read-positions") || action.equals("terrain-scan") || action.equals("physics-sync") || action.equals("write-readback") || action.equals("undo-readback") || action.equals("connection-repair");
         Instant capturedAt=Instant.now();
         Map<String,String> details=new java.util.LinkedHashMap<>();
-        details.put("openallay_builder:topology","integrated-server"); details.put("openallay_builder:dimension",binding.dimension());
+        details.put("openallay_builder:topology","integrated-server");
+        diagnosticDimension = binding.dimension();
+        details.put("openallay_builder:dimension",diagnosticDimension);
         details.put("openallay_builder:count",Long.toString(count)); details.put("openallay_builder:consistency",sliced?"multi-slice-non-atomic":"owner-action");
         if(sliced) { details.put("openallay_builder:capture_start",captureStarted.toString()); details.put("openallay_builder:capture_end",capturedAt.toString()); }
         if(action.equals("connection-repair")) details.put("openallay_builder:journal_coverage","explicit-writes-only");
