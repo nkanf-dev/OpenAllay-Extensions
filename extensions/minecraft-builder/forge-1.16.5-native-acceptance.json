@@ -5,15 +5,16 @@
   "jdk": "17.0.18+8",
   "builderSource": "fe6422454450ceb739d1174d87c681e76df1ab84",
   "builderJarSha256": "cbdeba2e7f9090241a3475fe958d819d728565dd916c121fbfac2782707eff32",
-  "productJarSha256": "87318b4361f30f1fdf324eaff093a70b07ec048ea7e93995cafdcbe81b62f53e",
+  "productJarSha256": "31a8f46c9fe0b020e9a853a75a59d57db3d5da63597b81d8491732cfc6ba7bf6",
   "sourceRepository": "OpenAllay-Extensions",
-  "installation": "Normal config/openallay/extensions discovery; compatible community candidate takes precedence over old bundled package",
+  "installation": "Normal product-bundled Builder discovery",
   "evidence": {
     "basicInvocation": 37472809988,
     "lifecycle": 37473458442,
     "worldSdk": 37469915172,
     "nativePersistence": 37471324172,
-    "ui": 37467389438
+    "ui": 37467389438,
+    "bundledPresetsAndReload": 37512012685
   },
   "accepted": [
     "Extension registration/Skill/modules under normal discovery",
@@ -22,7 +23,9 @@
     "Explicit cancellation rejects later writes",
     "Undo restores matching state and preserves external conflict",
     "Host WorldSession detached container data, rotation, identity, revocation",
-    "Native UUID and complete container state across clean save and second process reload"
+    "Native UUID and complete container state across clean save and second process reload",
+    "Five available presets, geometry, decoration, terrain and templates: 80 independent native checks",
+    "Second clean process reload: 80 native checks, exact 13 durable operations and template persistence"
   ],
   "notClaimed": [
     "All presets available",
@@ -32,6 +35,14 @@
     "Visual screenshot review",
     "Published release or central target matrix admission"
   ],
-  "materialRoleLimitation": "minecraft:lightning_rod is absent; build_skyscraper requires lightning_rod_up and must fail before writes. No alternate block substitution.",
-  "packageValidationFlagPolicy": "Original tested candidate bytes retained. This separate source-owned record states exact validation scope; no retrospective modification of tested JAR or false bundled-source provenance."
+  "packageValidationFlagPolicy": "Original tested candidate bytes retained. This separate source-owned record states exact validation scope; no retrospective modification of tested JAR or false bundled-source provenance.",
+  "status": "ACCEPTED",
+  "skipped": [
+    {
+      "name": "skyscraper",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "role": "lightning_rod_up"
+    }
+  ]
 }

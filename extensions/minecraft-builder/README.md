@@ -86,7 +86,8 @@ Its contract tests cover enabled restricted-JavaScript reads/writes and real
 closed, cancelled and foreign-invocation rejection, with journal outcomes unchanged.
 
 The manifest declares exact package compatibility; runtime evidence is recorded separately.
-On Forge1.16.5, the native palette intentionally omits `lightning_rod_up` because
-Minecraft has no lightning rod. `build_skyscraper` therefore fails before writes;
-the shared recipe does not substitute another block. Stock Forge1.12.2 remains
+On Forge1.16.5, five available presets, geometry, decoration, terrain and templates
+passed 80 independent native checks and a clean second-process reload with exact
+journal/template persistence. The skyscraper acceptance test is `SKIPPED` because
+Minecraft has no lightning rod. The shared recipes remain unchanged. Stock Forge1.12.2 remains
 unvalidated. Java8 bytecode alone does not establish Minecraft support.
