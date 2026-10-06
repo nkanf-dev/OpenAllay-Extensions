@@ -39,14 +39,14 @@ final class BuilderSkillContractTest {
             com.google.gson.JsonArray packaged = com.google.gson.JsonParser.parseReader(
                     new java.io.InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8))
                     .getAsJsonObject().getAsJsonObject("support").getAsJsonArray("targets");
-            Set<String> packagedPairs = new HashSet<String>();
+            java.util.List<String> packagedPairs = new java.util.ArrayList<String>();
             for (com.google.gson.JsonElement item : packaged) {
                 JsonObject target = item.getAsJsonObject();
                 packagedPairs.add(target.get("loader").getAsString() + ":" + target.get("minecraftVersionRange").getAsString());
             }
             assertEquals(extension.descriptor().support().targets().stream()
                     .map(target -> target.loader() + ":" + target.minecraftVersionRange())
-                    .collect(Collectors.toSet()), packagedPairs);
+                    .collect(Collectors.toList()), packagedPairs);
         } catch (java.io.IOException failure) {
             throw new AssertionError(failure);
         }
