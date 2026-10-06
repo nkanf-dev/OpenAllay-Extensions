@@ -1,8 +1,12 @@
 # Minecraft Builder Extension
 
 Builder **0.4.0** is one native-neutral Extension JAR using **Extension API 0.4.0**.
-Its production classes target **Java 8**. One universal payload serves the supported
-Minecraft **26.2 Fabric and NeoForge** hosts through their native world adapters.
+Its production classes target **Java 8**. One universal payload uses the exact
+Minecraft/loader targets in its support manifest and the host's native world adapters.
+The task-branch Forge 1.16.5 candidate has passed normal discovery, restricted Tool
+writes, partial failure, cancellation and undo on stock Forge36.2.42 with Java17.
+`forge-1.16.5-native-acceptance.json` binds the tested bytes and the exact validation scope.
+This is not a published release or a claim that every preset is available.
 
 ## One package, stable host
 
@@ -81,6 +85,8 @@ Builder 0.4.0 removes the Extension-private write gate and uses public SDK 0.4.0
 Its contract tests cover enabled restricted-JavaScript reads/writes and real
 closed, cancelled and foreign-invocation rejection, with journal outcomes unchanged.
 
-Package support remains 26.2 Fabric and NeoForge only. Stock Forge 1.12.2 and
-other game versions need their own native adapter/runtime acceptance. Java 8
-bytecode is portability, not a broader Minecraft support declaration.
+The manifest declares exact package compatibility; runtime evidence is recorded separately.
+On Forge1.16.5, the native palette intentionally omits `lightning_rod_up` because
+Minecraft has no lightning rod. `build_skyscraper` therefore fails before writes;
+the shared recipe does not substitute another block. Stock Forge1.12.2 remains
+unvalidated. Java8 bytecode alone does not establish Minecraft support.

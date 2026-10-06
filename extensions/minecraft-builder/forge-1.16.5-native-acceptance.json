@@ -1,0 +1,37 @@
+{
+  "target": "forge:1.16.5",
+  "minecraft": "1.16.5",
+  "forge": "36.2.42",
+  "jdk": "17.0.18+8",
+  "builderSource": "fe6422454450ceb739d1174d87c681e76df1ab84",
+  "builderJarSha256": "cbdeba2e7f9090241a3475fe958d819d728565dd916c121fbfac2782707eff32",
+  "productJarSha256": "87318b4361f30f1fdf324eaff093a70b07ec048ea7e93995cafdcbe81b62f53e",
+  "sourceRepository": "OpenAllay-Extensions",
+  "installation": "Normal config/openallay/extensions discovery; compatible community candidate takes precedence over old bundled package",
+  "evidence": {
+    "basicInvocation": 37472809988,
+    "lifecycle": 37473458442,
+    "worldSdk": 37469915172,
+    "nativePersistence": 37471324172,
+    "ui": 37467389438
+  },
+  "accepted": [
+    "Extension registration/Skill/modules under normal discovery",
+    "Restricted JavaScript write/read/finish, cheats off",
+    "Partial write failure preserves actual prior mutation and journals",
+    "Explicit cancellation rejects later writes",
+    "Undo restores matching state and preserves external conflict",
+    "Host WorldSession detached container data, rotation, identity, revocation",
+    "Native UUID and complete container state across clean save and second process reload"
+  ],
+  "notClaimed": [
+    "All presets available",
+    "All optional viewer mod combinations",
+    "Dedicated-server support",
+    "Physical microphone/IME acceptance",
+    "Visual screenshot review",
+    "Published release or central target matrix admission"
+  ],
+  "materialRoleLimitation": "minecraft:lightning_rod is absent; build_skyscraper requires lightning_rod_up and must fail before writes. No alternate block substitution.",
+  "packageValidationFlagPolicy": "Original tested candidate bytes retained. This separate source-owned record states exact validation scope; no retrospective modification of tested JAR or false bundled-source provenance."
+}
