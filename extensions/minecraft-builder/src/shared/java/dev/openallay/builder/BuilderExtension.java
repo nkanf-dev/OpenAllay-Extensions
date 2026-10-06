@@ -34,6 +34,7 @@ public final class BuilderExtension implements OpenAllayExtension {
         targets.add(new SupportTarget("forge", "1.18.2", "[0.4.1,)", "[0.4.0,0.5.0)"));
         targets.add(new SupportTarget("forge", "1.19.2", "[0.4.1,)", "[0.4.0,0.5.0)"));
         targets.add(new SupportTarget("forge", "1.16.5", "[0.4.1,)", "[0.4.0,0.5.0)"));
+        targets.add(new SupportTarget("forge", "1.12.2", "[0.4.1,)", "[0.4.0,0.5.0)"));
         return new ExtensionDescriptor("openallay:builder", "Minecraft Builder", "0.4.0",
                 "OpenAllay", "Full online construction for the active integrated Minecraft server.",
                 "https://github.com/nkanf-dev/OpenAllay-Extensions",
