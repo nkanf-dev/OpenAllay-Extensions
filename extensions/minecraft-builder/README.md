@@ -1,100 +1,102 @@
 # Minecraft Builder Extension
 
-Builder **0.4.0** is one native-neutral Extension JAR using **Extension API 0.4.0**.
-Its production classes target **Java 8**. One universal payload uses the exact
-Minecraft/loader targets in its support manifest and the host's native world adapters.
-The task-branch Forge 1.16.5 candidate has passed normal discovery, restricted Tool
-writes, partial failure, cancellation and undo on stock Forge36.2.42 with Java17.
-`forge-1.16.5-native-acceptance.json` binds the tested bytes and the exact validation scope.
-This is not a published release or a claim that every preset is available.
+**Minecraft Builder 0.4.0** builds in your active
+single-player world. It uses **Extension API 0.4.0** and one Java 8 universal
+payload. OpenAllay supplies the native game adapters.
 
-## One package, stable host
+## Start building
 
-Geometry, terrain, presets, templates, journals, Skills and JavaScript stay in this
-repository. Minecraft-specific block/NBT/SavedData operations and owner scheduling
-are supplied by core `MinecraftWorldAccess` / `WorldSession` adapters. The Extension
-has no Minecraft or loader class dependency and no per-game loader entrypoint.
-Gson 2.14 is relocated privately; SDK and game classes are not bundled.
+1. Install the [latest OpenAllay release](https://github.com/nkanf-dev/OpenAllay/releases/latest)
+   for your Minecraft version and loader. Follow the
+   [compatibility guide](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/native-binary-artifacts.md)
+   for the required Java runtime and loader-specific setup. Forge 1.16.5 and
+   1.12.2 use Java 17. Builder comes with OpenAllay.
+2. Enter a single-player world and select a client-configured model profile.
+3. Enable **Minecraft Builder** in **Settings → Extensions**.
+4. Describe the build and location you want.
 
-Build the compatible public SDK, then use the checked-in wrapper:
+Enabling Builder includes its building operations in ordinary JavaScript mode.
+Builder works in survival and creative worlds. The
+**Enable full-access JavaScript** switch can stay off.
+World edits use the active integrated server. Block undo restores matching
+recorded after-images and reports conflicts with later edits.
+
+## Tools and preset availability
+
+Builder offers geometry, decoration, terrain, presets, and saved structure
+templates. Templates support rotation, mirroring, and explicit air. The host
+validates exact native block IDs and properties before writing.
+
+Preset availability follows the game's material palette:
+
+| Minecraft version and loader | Available building operations |
+| --- | --- |
+| Forge 1.16.5 | Geometry, decoration, terrain, templates, house, cottage, windmill, farm, and dock |
+| Forge 1.12.2 | Geometry, native block variants, terrain paths, persisted templates, rotation, mirroring, and block undo |
+
+On 1.16.5, choose one of the five presets listed above; the skyscraper preset
+requires a lightning rod. On 1.12.2, build with geometry, terrain paths, and
+templates. Its native material palette supports these operations; the six
+structure presets require additional material roles. Check preset availability
+and the native palette before selecting a preset.
+
+## Shared implementation
+
+Geometry, terrain, presets, templates, journals, Skills, and JavaScript live in
+this repository. `MinecraftWorldAccess` and `WorldSession` provide block states,
+NBT, world identity, loaded-chunk checks, and owner-thread scheduling. One
+Extension payload contains the domain code; the core owns native differences.
+
+Load the `minecraft-builder` Skill and its focused references. In ordinary
+JavaScript, use `require('openallay_builder:building').open(options)`.
+The host method binding is `openallay_builder:native`. Region work uses
+cooperative slices. Only loaded chunks participate.
+
+Opening is lazy and binds the exact active player, connection, and integrated
+world. Read access leaves world identity unchanged. The first write or undo
+initializes identity. Native operations check invocation lifetime and exact
+world identity when they execute.
+
+Templates and journals live under `config/openallay-builder/`. `finish`
+completes a journal group. Cancelled or failed operations retain writes already
+applied. Undo creates a new group and restores verified matching after-images.
+Opaque native block-entity SNBT preserves the game's actual data. Templates and
+journals cover their recorded blocks; retain world backups for complete world
+and entity recovery.
+
+## Build and install the universal package
+
+Build the compatible SDK, then use the checked-in wrapper:
 
 ```text
 /path/to/OpenAllay/gradlew -p /path/to/OpenAllay :extension-api:jar
 ./gradlew -PopenallayExtensionApiJar=/path/to/openallay-extension-api-0.4.0.jar build
 ```
 
-Output: `universal/build/libs/openallay-builder-universal-0.4.0.jar`.
-`verifyUniversalPackage` checks Java 8 classfiles, the exact external support manifest,
-private JSON dependency isolation, canonical resources and absence of native/loader/SDK
-classes. The thin JAR is not the distributable package.
+The distributable JAR is
+`universal/build/libs/openallay-builder-universal-0.4.0.jar`.
+`verifyUniversalPackage` checks Java 8 classfiles, the external support manifest,
+canonical resources, and private dependency isolation. Gson is privately
+relocated; the host supplies SDK, game, loader, and Rhino classes.
 
-Install the universal JAR in `config/openallay/extensions/` and restart a compatible
-host. Do not put it in `mods/` or install a legacy loader Builder beside it. The current
-published OpenAllay 0.4.1 packages still bundle Builder 0.2.1; this new source integration
-and its pinned development core are separate from that immutable release.
+For a separately supplied universal package, install the JAR in
+`config/openallay/extensions/` and restart a compatible host. Universal packages
+use this directory; legacy loader-mod packages use `mods/`.
+An active same-ID community package takes precedence over the bundled payload.
 
-## Authority and lifecycle
+## Native acceptance records
 
-The host advertises `minecraft:world-access` only when its native adapter exists.
-Enabling Minecraft Builder enables its building operations. Opening Builder is lazy
-and binds the exact active player, connection and integrated world through the
-invocation-owned SDK. Read access does not create a world identity. The first write
-or undo initializes that identity. These operations work in restricted JavaScript
-without Agent JVM access.
+The accepted Forge 1.16.5 task package ran on Forge **36.2.42** and Java
+**17.0.18+8**. Five presets and shared operations passed 80 native block checks;
+reopening the original world preserved 13 journal operations and the template.
 
-Native work runs on the game owner. Scripts and artifact IO remain on their worker.
-Queued work rechecks invocation lifetime, exact identity, world lifetime and loaded
-chunks. Closing stops queued operations; it is not an implicit world rollback. A changed write with unavailable readback keeps its
-durable pending intent and original failure, not fabricated air or success.
+The accepted Forge 1.12.2 task package ran on Forge **14.23.5.2864** and Java
+**17.0.18+8**. Normal bundled discovery loaded Builder. Native checks covered
+geometry, terrain paths, template persistence and transformations, partial
+failure, cancellation, undo, and conflicts. Both targets use restricted
+JavaScript in survival worlds with cheats off.
 
-## Modules and artifacts
-
-Load the `minecraft-builder` Skill and its focused references. Use
-`require('openallay_builder:building').open(options)` in restricted JavaScript;
-no Agent JVM access is required. The actual native method binding is
-`openallay_builder:native`. Large region work uses cooperative slices, not a total
-volume cap. Unloaded chunks are not generated as a hidden side effect.
-
-Preset defaults use the native context's 47 material roles. IDs and every requested
-property are validated on the host. Missing roles fail before writes; modern block
-names or `waterlogged` properties are not silently assumed in older games. Explicit
-caller materials remain exact native states.
-
-Templates and journals remain under `config/openallay-builder/`. Their current JSON
-shapes are unchanged: no internal format version, migration or replay branch. `finish`
-completes a journal group; undo creates its own group and restores only verified
-matching after-images. Later edits report conflicts. Opaque block-entity SNBT preserves
-actual native data; unsupported transforms fail rather than inventing orientation.
-The journal is not a whole-world/entity backup or an atomic transaction.
-
-## Universal architecture evidence
-
-The prior Builder 0.3.0 payload established the universal-package baseline:
-
-- 211 shared detached domain/storage/JavaScript fixture tests passed.
-- One privately shaded JAR ran unchanged on Java 8 and Java 25 with official Gson 2.8.0
-  in the parent; all 318 production/dependency classes were major 52.
-- Both actual 26.2 development clients loaded that JAR through normal discovery.
-  Restricted Tool calls exercised reads, batch build/template/finish and journal undo.
-  Independent native owner readback verified all seven cells and the diamond chest
-  SNBT were restored. Framework shutdown released scopes and classloaders.
-- Native codec/transform/SavedData/connection tests live in the core adapter module;
-  canonical preset emitted states are cross-checked with its real registry.
-
-Builder 0.4.0 removes the Extension-private write gate and uses public SDK 0.4.0.
-Its contract tests cover enabled restricted-JavaScript reads/writes and real
-closed, cancelled and foreign-invocation rejection, with journal outcomes unchanged.
-
-The manifest declares exact package compatibility; runtime evidence is recorded separately.
-On Forge1.16.5, five available presets, geometry, decoration, terrain and templates
-passed 80 independent native checks and a clean second-process reload with exact
-journal/template persistence. The skyscraper acceptance test is `SKIPPED` because
-Minecraft has no lightning rod. The shared recipes remain unchanged.
-
-The Forge 1.12.2 task-branch candidate passed restricted write/read/finish, partial
-failure, cancellation and undo on stock Forge14.23.5.2864 with Java17. Its final
-product-bundled run passed 17 independent native checks for geometry, a controlled
-terrain path, persisted templates, rotation, mirroring and connection repair.
-The actual native palette marks all six default presets `SKIPPED` with their
-missing roles. Exact custom native states remain available for geometry and templates.
-`forge-1.12.2-native-acceptance.json` records the tested bytes, runs and integrated-client scope.
+Published downloads and setup instructions live in the
+[core compatibility guide](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/native-binary-artifacts.md).
+The [core backport record](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/verification/mature-forge-ecosystems.md)
+tracks native acceptance and source provenance.

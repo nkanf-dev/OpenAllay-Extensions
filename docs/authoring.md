@@ -1,34 +1,56 @@
 # Authoring an OpenAllay Extension
 
-## Native-neutral API 0.3.0
+## Universal Extension API 0.4.0
 
-New portable Extensions can compile against the standalone Java-8
-`dev.openallay:openallay-extension-api:0.3.0` SDK. Implement
-`dev.openallay.api.extension.OpenAllayExtension` with a public no-argument constructor,
-keep game and loader classes out of the payload, and package one self-contained JAR.
-The core discovers its explicit schema-2 entrypoint at startup from
-`config/openallay/extensions/`, not `mods/`.
+Compile against the standalone Java 8 SDK
+`dev.openallay:openallay-extension-api:0.4.0` as a compile-only dependency.
+Implement `dev.openallay.api.extension.OpenAllayExtension` with a public
+no-argument constructor. Keep game, loader, Rhino, and SDK classes outside
+your self-contained payload. Privately shade dependencies your Extension owns.
 
-The support declaration is an explicit union of loader/game/core/API coordinates,
-minimum Java version and required host features. Validation labels and advisory
-requirements are separate from compatibility and permission grants. Do not widen
-ranges based only on Java-8 bytecode or assume an old game's native APIs exist.
-See the [core universal Extension contract](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/universal-extensions.md)
-and the [one Builder payload](../extensions/minecraft-builder/README.md) for exact
-schema, invocation, JSON and native world-port boundaries.
+The core discovers the JAR at startup from `config/openallay/extensions/`.
+Its `META-INF/openallay-extension.json` names the entrypoint and declares an
+explicit union of Minecraft, loader, product, and public API compatibility
+coordinates. It also declares minimum Java and required host features.
+The manifest and Java descriptor must agree.
+
+`descriptor()` returns immutable identity and support metadata without touching
+a world. `contribution(ExtensionHost)` returns JavaScript modules, Skills,
+result-view declarations, invocation participants, and controlled host bindings.
+Pure JavaScript and Skill contributions can work without a native world adapter.
+
+`JavascriptHostMethod.Invoker` accepts detached JSON arguments as Strings and
+returns one JSON value as a String. The core validates and detaches values.
+An `ExtensionInvocation` binds identity, cancellation, and evidence to one
+request. Capture native state lazily through the host and perform each operation
+on its owning game thread.
+
+After you enable an Extension, its exposed operations are available in ordinary
+JavaScript mode. Enabling Minecraft Builder includes building and world writes.
+Full-access JavaScript includes game commands and enabled Extension operations.
+Minecraft checks the actual player connection and server permissions. Cancellation, closed invocations,
+and world lifetime remain operation-validity checks.
+
+Read the [complete manifest and lifecycle contract](https://github.com/nkanf-dev/OpenAllay/blob/main/docs/universal-extensions.md)
+and [Builder implementation guide](../extensions/minecraft-builder/README.md).
+Use the standalone SDK declarations and package tests as the source for public
+API signatures. Match every declared target to its actual game adapter and
+available blocks or properties.
 
 ## Existing loader-mod API 0.2.x
 
-The remainder describes the independently released legacy API and package contract.
-It remains valid only for the versions and loader coordinates declared by that
-Extension. It is not the packaging path for a new universal API 0.3.0 payload.
+The following sections describe the independently released API 0.2.x example
+and loader-mod package contract. Use them for an Extension targeting that API
+and its declared Minecraft and loader versions. For a new universal Extension,
+use the SDK 0.4.0 instructions above and the linked manifest and lifecycle contract.
 
-An OpenAllay Extension is an ordinary Fabric or NeoForge mod. The loader creates
+An API 0.2.x Extension is an ordinary Fabric or NeoForge mod. The loader creates
 your entrypoint, your entrypoint registers one immutable declaration, and
 OpenAllay validates the declaration before publishing any contribution.
-OpenAllay does not scan classes or hot-load JARs.
+The loader registers the Extension during startup. Restart Minecraft after
+installing its JAR.
 
-## Package contract
+## Legacy API 0.2.x package contract
 
 Include `META-INF/openallay-extension.json` in the final JAR. Its identity,
 version ranges, and `modIds` must agree with the mod metadata in
@@ -53,7 +75,7 @@ JAR declares only `fabric`; the manifest in the NeoForge JAR declares only
 catalog groups those loader-specific artifacts into one logical Extension
 entry and selects only the current loader at install time.
 
-## Advisory requirements
+## Legacy API 0.2.x advisory requirements
 
 Schema-1 package manifests and schema-2 catalog entries may include an optional
 `requirements` object. It describes useful capabilities, Extensions, and Skills
@@ -74,17 +96,19 @@ uppercase letters, wildcards, or version expressions. The full ID must match:
 - `extensions`: `[a-z0-9_.-]+:[a-z0-9_./-]+`;
 - `skills`: `[a-z0-9]+(?:-[a-z0-9]+)*`, at most 64 characters.
 
-Unknown capability IDs remain valid declarations. They do not authorize
-anything. Absent members mean empty lists. Unknown members, duplicate IDs,
+Unknown capability IDs remain valid declarations. Capability IDs describe
+availability; player settings and Minecraft permissions control operations.
+Absent members mean empty lists. Unknown members, duplicate IDs,
 invalid IDs, and non-array values are rejected. Omit `requirements` when all
 lists are empty. The catalog builder omits empty lists and the all-empty object;
 it preserves declared ID order. Entries without requirements keep their prior
 output. Other unknown fields and unsupported schema versions remain invalid.
 
-Requirements are advisory, not installation, activation, or use gates. They do
-not enable settings, install dependencies, grant permissions, or promise that
-missing APIs will work. Existing loader dependencies and Skill `required-mods`
-and `allowed-tools` keep their separate contracts. Keep catalog declarations
+Requirements are advisory: they show useful capabilities, Extensions, and Skills
+to the player. Installation, activation, use, settings, dependencies, and
+permissions follow their existing controls independently of this metadata.
+API availability comes from the installed host and integrations. Existing loader
+dependencies and Skill `required-mods` and `allowed-tools` keep their separate contracts. Keep catalog declarations
 consistent with the selected package where possible. After staging, the checked
 package manifest is the source for advisory display; differences in requirements
 alone are not identity mismatches. Identity, compatibility, checksums, and mod-ID
@@ -96,7 +120,7 @@ Run the focused tooling tests without building any loader artifacts:
 node --test scripts/requirements.test.mjs
 ```
 
-## Fabric entrypoint
+## Legacy API 0.2.x Fabric entrypoint
 
 Declare a normal `main` entrypoint in `fabric.mod.json`, then register during
 loader initialization:
@@ -110,7 +134,7 @@ public final class ExampleFabricExtension implements ModInitializer {
 }
 ```
 
-## NeoForge entrypoint
+## Legacy API 0.2.x NeoForge entrypoint
 
 Register from the ordinary mod constructor:
 
@@ -157,7 +181,7 @@ transactional: incompatible metadata, duplicate IDs, invalid Rhino-visible
 types, or an invalid Skill reject the candidate without partially publishing
 its other contributions.
 
-## Runtime ownership
+## Legacy API 0.2.x runtime ownership
 
 Capture Minecraft or mod API state on its owning game thread and detach it
 before the Agent worker can see it. A `JavascriptDataModule` should project only
@@ -169,7 +193,7 @@ Optional dependencies fail independently. If an upstream mod is absent or its
 public API capture fails, return a diagnostic capability state instead of
 crashing OpenAllay bootstrap.
 
-## Catalog submission
+## Legacy API 0.2.x catalog submission
 
 After publishing the loader-compatible JARs:
 
