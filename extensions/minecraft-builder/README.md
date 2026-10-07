@@ -89,5 +89,12 @@ The manifest declares exact package compatibility; runtime evidence is recorded 
 On Forge1.16.5, five available presets, geometry, decoration, terrain and templates
 passed 80 independent native checks and a clean second-process reload with exact
 journal/template persistence. The skyscraper acceptance test is `SKIPPED` because
-Minecraft has no lightning rod. The shared recipes remain unchanged. Stock Forge1.12.2 remains
-unvalidated. Java8 bytecode alone does not establish Minecraft support.
+Minecraft has no lightning rod. The shared recipes remain unchanged.
+
+The Forge 1.12.2 task-branch candidate passed restricted write/read/finish, partial
+failure, cancellation and undo on stock Forge14.23.5.2864 with Java17. Its final
+product-bundled run passed 17 independent native checks for geometry, a controlled
+terrain path, persisted templates, rotation, mirroring and connection repair.
+The actual native palette marks all six default presets `SKIPPED` with their
+missing roles. Exact custom native states remain available for geometry and templates.
+`forge-1.12.2-native-acceptance.json` records the tested bytes, runs and integrated-client scope.

@@ -1,0 +1,123 @@
+{
+  "target": "forge:1.12.2",
+  "minecraft": "1.12.2",
+  "forge": "14.23.5.2864",
+  "jdk": "17.0.18+8",
+  "scope": "Client with an active integrated server; restricted JavaScript; survival world with cheats off",
+  "builderSource": "6e977110cbe8e0ca0b39c012f0cdfc10bafffef2",
+  "builderJarSha256": "bf8cfff9b82f84914aa1c84173d531f2256f537215a66a8d2057adc504632345",
+  "builderVersion": "0.4.0",
+  "openAllayApiVersion": "0.4.0",
+  "minimumJavaVersion": 8,
+  "classMajor": 52,
+  "sourceRepository": "OpenAllay-Extensions",
+  "installation": "Normal product-bundled Builder discovery; raw tested candidate cached unchanged; no community Builder installed in the final bundled run",
+  "productArtifacts": [
+    {
+      "name": "openallay-feature-core.jar",
+      "sha256": "e6013460c4b54626d35fdb5117b0bee28906dae7d8759f543a206c4a809adf0a"
+    },
+    {
+      "name": "openallay-lifecycle-facade.jar",
+      "sha256": "713582bd5e1cad18d25459b9b77b9cfd91afec81ebc9f3c563ab6c8b6ef8cde0"
+    },
+    {
+      "name": "openallay-private-mixin.jar",
+      "sha256": "6778a3383c7c7ed412934c11d99c641f982ab85fa5be75f15e96e0146e457922"
+    }
+  ],
+  "nativeCompiledSource": "7829b591ac5ddab367b25822210280cba1bda3ab",
+  "engineJarSha256": "bec436f8a5c50b7842b293f3546135df08c47365543767a05cfd1c08428ba96c",
+  "evidence": {
+    "package": 37538595660,
+    "basicInvocation": 37542339251,
+    "partialFailure": 37542602426,
+    "cancellation": 37542606847,
+    "undo": 37542610683,
+    "bundledGeometryTerrainAndTemplates": 37549916767
+  },
+  "evidenceInstallation": {
+    "basicAndLifecycle": "Normal community Extension discovery of the same raw candidate",
+    "finalGeometryTerrainAndTemplates": "Normal product-bundled discovery"
+  },
+  "accepted": [
+    "Builder registration, Skill and modules through normal Extension discovery",
+    "Restricted JavaScript write, readback and finish with cheats off",
+    "Partial failure retains the earlier native write and leaves the invalid follow-up cell unchanged",
+    "Explicit cancellation retains the earlier native write and rejects the later write",
+    "Undo restores matching state and preserves the external conflict",
+    "Bundled hollow box, native-variant floor and controlled terrain path",
+    "Template save, load, list and exact persisted content",
+    "Native stair and chest rotation, front-back mirror, explicit-air replacement and connection repair",
+    "17 independent integrated-server owner-thread checks with exact native IDs and complete property maps",
+    "Missing preset roles bound independently to the actual native material palette",
+    "Natural unsignalled exit 0 in every accepted runtime case"
+  ],
+  "availablePresetCount": 0,
+  "skipped": [
+    {
+      "name": "build_cottage",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "campfire_lit_north",
+        "lantern_hanging"
+      ]
+    },
+    {
+      "name": "build_dock",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "lantern_standing"
+      ]
+    },
+    {
+      "name": "build_farm",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "oak_fence_gate_north"
+      ]
+    },
+    {
+      "name": "build_simple_house",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "furnace_north",
+        "lantern_hanging",
+        "oak_pressure_plate_unpowered"
+      ]
+    },
+    {
+      "name": "build_skyscraper",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "blue_stained_glass",
+        "cyan_stained_glass",
+        "ladder_north",
+        "light_blue_stained_glass",
+        "lightning_rod_up",
+        "smooth_stone",
+        "smooth_stone_slab_bottom",
+        "stone_brick_wall",
+        "stone_bricks"
+      ]
+    },
+    {
+      "name": "build_windmill",
+      "status": "SKIPPED",
+      "reason": "missing_material_palette_role",
+      "roles": [
+        "stone_bricks",
+        "white_concrete",
+        "white_wool"
+      ]
+    }
+  ],
+  "packageValidationFlagPolicy": "Tested raw JAR retained unchanged with validatedTargetIds []. Runtime acceptance is recorded here separately.",
+  "deliveryScope": "Task-branch candidate acceptance",
+  "status": "ACCEPTED"
+}
